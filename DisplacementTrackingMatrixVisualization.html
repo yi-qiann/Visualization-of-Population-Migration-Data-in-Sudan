@@ -8,14 +8,29 @@
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet">
     <style>
         body { margin: 0; padding: 20px; font-family: "微软雅黑"; }
-        #map { position: absolute; top: 60px; bottom: 0; width: calc(100% - 40px); 
+        #map { position: absolute; top: 60px; bottom: 45px; width: calc(100% - 40px); 
                border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        #map-footer {
+               position: fixed;
+                 bottom: 0;
+                left: 0;
+              width: 100%;
+              background: rgba(255, 255, 255, 0.9);
+               padding: 8px 20px;
+              font-size: 12px;
+              text-align: center;
+              border-top: 1px solid #ddd;
+              z-index: 1000; /* 确保在地图上层 */
+               box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+                  } 
         .controls { background: #f8f9fa; padding: 15px; border-radius: 8px;
                    box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 10px; }
-        .ball {
+            .ball {
             width: 12px;
             height: 12px;
             border-radius: 50%;
@@ -61,10 +76,7 @@
         gap: 4px;
     }
    
-    .compact .person-icon {
-        width: 24px;
-        height: 24px;
-    }
+ 
     .count {
         font-size: 14px;
         color: #333;
@@ -183,6 +195,7 @@ body {
     padding: 20px 20px 0 20px; /* 上边距增加 */
     padding-top: 80px; /* 根据菜单栏高度调整 */
     font-family: "微软雅黑"; 
+    font-size: 16px;
 }
     /* 鼠标悬停时颜色变浅 */
     #menu-bar button:hover {
@@ -339,7 +352,7 @@ body {
 }
 #legend {
   position: absolute;
-  bottom: 30px;
+  bottom: 65px;
   width:140px;
   right: 20px;
   background: rgba(255,255,255,0.95);
@@ -429,6 +442,86 @@ body {
 .s2 { transform: translateX(-2px); }
 .s3 { transform: translateX(-4px); }
 .s4 { transform: translateX(-6px); }
+
+.year-dropdown {
+  background: #f0f8ff;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 120px;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 10px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.month-item {
+  position: relative; /* 为子菜单定位提供参考 */
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  font-size: 0.9em;
+}
+
+.has-data {
+  background: #2196F3;
+  color: white;
+}
+
+.no-data {
+  background: #00BCD4;
+  color: white;
+  cursor: not-allowed;
+}
+
+.date-submenu {
+  position: absolute;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  padding: 8px;
+  z-index: 1001;
+  min-width: 160px;
+  transition: opacity 0.3s ease;
+}
+
+.mini-chart-container {
+    position: relative;
+    margin-top: 5px;
+    transition: height 0.3s ease-out;
+}
+
+.chart-loading {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    padding: 5px 0;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+.date-text {
+    padding: 5px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.date-text:hover {
+    background: #f5f5f5;
+}
+
+
     </style>
 </head>
 <body>
@@ -468,19 +561,24 @@ body {
         正在加载文件列表...
     </div>
     <div id="noDataPopup" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.9); padding: 20px 30px; border: 1px solid #ccc; border-radius: 8px; z-index: 1003; font-size: 16px; color: #333;">
-        当前文档无数据
+        No data
       </div>
     <div id="map"></div>
     <canvas id="arrow-canvas"></canvas>
+    <div id="migration-info" style="position: absolute; bottom: 40px; left: 20px; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: none;">
+        <h3 id="region-name"></h3>
+        <canvas id="migration-chart" width="250" height="250"></canvas>
+        <p id="max-migration"></p>
+    </div>
     <div id="legend">
         <div class="legend-title">ESTIMATED IDPS</div>
         <div class="legend-content">
           <!-- 标注文字 -->
           <div class="labels">
-            <div>＜20,000</div>
-            <div>20,000-100,000</div>
-            <div>100,000-500,000</div>
-            <div>500,000+</div>
+            <div>＜20 k</div>
+            <div>20 k-100 k</div>
+            <div>100 k-500 k</div>
+            <div>500 k+</div>
           </div>
           <!-- 相切圆容器 -->
           <div class="sphere-stack">
@@ -517,7 +615,7 @@ let fileSelectionVisible = false;
 let dataLoaded = false;
 let locationMarkers = [];
 let autoProcessEnabled = true; // 控制自动处理开关
-
+let currentSubmenu = null;
 
 const citycode = {
     "SD15034": "Al Hasahisa",
@@ -964,7 +1062,7 @@ const layerConfigs = {
         'source-layer': 'gadm41_SDN_1-c1lw97',
         paint: {
             'line-color': '#444',
-            'line-width': 7,
+            'line-width': 3,
             'line-opacity': 0.8
         }
     },
@@ -975,7 +1073,7 @@ const layerConfigs = {
         'source-layer': 'gadm41_SDN_1-c1lw97',
         paint: {
             'line-color': '#000',
-            'line-width': 4,
+            'line-width': 2,
             'line-opacity': 0.9
         }
     }
@@ -1003,6 +1101,8 @@ const parseCustomDate = (inputStr) => {
 
     return new Date(year, month, day);
 };
+const chartCache = new Map();
+
 
 
 let migrationData = {};
@@ -1016,6 +1116,7 @@ let inflowData = {};  // 新增迁入数据存储
 let currentMode = 'origin'; // 当前显示模式：outflow/inflow
 let currentAdminLevel = 'state'; // state/detail
 let initialLoad = true; // 新增初始化标志
+let populationChart = null;
 
 const map = new mapboxgl.Map({
     container: 'map',
@@ -1055,7 +1156,7 @@ function initializeMap(){
         },
         paint: {
             'line-color': '#444',
-            'line-width': 4,
+            'line-width': 0.5,
             'line-opacity': 0.8,
         }
     });
@@ -1067,7 +1168,7 @@ function initializeMap(){
         'source-layer': 'gadm41_SDN_1-c1lw97',
         paint: {
             'line-color': '#000',
-            'line-width': 4,
+            'line-width': 0.5,
             'line-opacity': 0.9
         }
     });
@@ -1186,7 +1287,6 @@ function createLabelElement(name) {
 
 async function toggleFileSelection() {
     const dropdownMenu = document.getElementById('dropdownContainer');
-    const fileList = document.getElementById('fileList');
     const selectButton = document.getElementById('selectDataButton');
     
     if (fileMap.size === 0 && !window.dataLoaded) {
@@ -1195,46 +1295,369 @@ async function toggleFileSelection() {
         window.dataLoaded = true;
         document.getElementById('loading').style.display = 'none';
 
-        // 自动选择第一个文件
-        const firstEntry = fileMap.entries().next().value;
-        if (firstEntry) {
+        // 保留自动选择第一个文件的逻辑 ---------------------
+        if (fileMap.size > 0) {
+            const firstEntry = fileMap.entries().next().value;
             const [firstDate, firstFileInfo] = firstEntry;
+            
+            // 更新按钮文本并加载数据
             selectButton.textContent = firstDate;
-            
-            // 加载并处理第一个文件数据
             await loadSelectedFile(firstFileInfo.url, firstDate);
-
-            // 设置默认显示North Kordofan的迁移数据
-            currentMode = 'origin';
-            selectedRegion = { name: 'North Kordofan', mode: 'origin' };
             
-            // 强制触发可视化
+            // 生成默认地区曲线
+            selectedRegion = { name: 'North Kordofan', mode: 'origin' };
             visualizeCurrentFile();
-            initialLoad = false;
         }
+        // ----------------------------------------------
     }
-    
 
     if (!fileSelectionVisible) {
-        fileList.innerHTML = '';
-        fileMap.forEach((fileInfo, dateLabel) => {
-            const listItem = document.createElement('li');
-            listItem.textContent = `${dateLabel}`;
-            listItem.onclick = async () => {
-                selectButton.textContent = dateLabel; // 更新按钮文本
-                dropdownMenu.style.display = 'none';
-                fileSelectionVisible = false;
-                
-                await loadSelectedFile(fileInfo.url, dateLabel);
-                selectedRegion = { name: 'North Kordofan', mode: 'origin' };
-                visualizeCurrentFile();
-            };
-            fileList.appendChild(listItem);
-        });
+        const dataHierarchy = buildDataHierarchy();
+        renderYearDropdown(dataHierarchy, dropdownMenu);
     }
     
     fileSelectionVisible = !fileSelectionVisible;
     dropdownMenu.style.display = fileSelectionVisible ? 'block' : 'none';
+}
+
+function buildDataHierarchy() {
+    const hierarchy = {};
+    
+    fileMap.forEach((fileInfo, dateLabel) => {
+        const dateParts = dateLabel.split('-');
+        const year = dateParts[2];
+        const month = dateParts[1];
+        
+        if (!hierarchy[year]) hierarchy[year] = {};
+        if (!hierarchy[year][month]) hierarchy[year][month] = [];
+        hierarchy[year][month].push({
+            dateLabel,
+            url: fileInfo.url
+        });
+    });
+    
+    return hierarchy;
+}
+
+// 渲染年份下拉
+function renderYearDropdown(hierarchy, container) {
+    container.innerHTML = '';
+    const yearMenu = document.createElement('div');
+    yearMenu.className = 'year-dropdown';
+    
+    Object.keys(hierarchy)
+        .sort((a, b) => b - a) // 降序排列
+        .forEach(year => {
+            const yearItem = document.createElement('div');
+            yearItem.className = 'year-item';
+            yearItem.textContent = year;
+            yearItem.addEventListener('click', () => renderMonthGrid(year, hierarchy[year], container));
+            yearMenu.appendChild(yearItem);
+        });
+    
+    container.appendChild(yearMenu);
+}
+
+// 渲染月份网格
+function renderMonthGrid(year, monthsData, container) {
+    const monthGrid = document.createElement('div');
+    monthGrid.className = 'month-grid';
+    
+    for (let month = 1; month <= 12; month++) {
+        const monthKey = new Date(year, month - 1).toLocaleString('en-US', { month: 'short' });
+        const monthData = monthsData[monthKey];
+        const monthItem = document.createElement('div');
+        
+        monthItem.className = `month-item ${monthData ? 'has-data' : 'no-data'}`;
+        monthItem.textContent = `${monthKey}`;
+        
+        if (monthData) {
+        monthItem.addEventListener('click', (e) => {
+            // 关闭已存在的子菜单
+            closeDateSubmenu();
+            
+            if (monthData.length > 1) {
+                showDateSubmenu(e.target, monthData);
+            } else {
+                selectDate(monthData[0]);
+            }
+        });
+    }
+        
+        monthGrid.appendChild(monthItem);
+    }
+    container.innerHTML = '';
+    container.appendChild(monthGrid);
+}
+// 显示日期子菜单
+async function showDateSubmenu(target, dates) {
+    closeDateSubmenu();
+    
+    const submenu = document.createElement('div');
+    submenu.className = 'date-submenu';
+    
+    // 排序日期
+    const sortedDates = dates.sort((a, b) => {
+        const aDate = extractDateFromString(a.dateLabel).dateObj;
+        const bDate = extractDateFromString(b.dateLabel).dateObj;
+        return aDate - bDate;
+    });
+
+    // 预加载数据
+    const dataPromises = sortedDates.map(async dateInfo => {
+        try {
+            const total = await fetchTotalPopulation(dateInfo.url);
+            return { ...dateInfo, total };
+        } catch (e) {
+            return { ...dateInfo, total: null };
+        }
+    });
+
+    const datesWithData = await Promise.all(dataPromises);
+
+    // 创建日期项
+    datesWithData.forEach(dateInfo => {
+        const dateItem = document.createElement('div');
+        dateItem.className = 'date-item';
+        
+        // 日期文本
+        const dateText = document.createElement('div');
+        dateText.className = 'date-text';
+        dateText.textContent = dateInfo.dateLabel.split('-')[0];
+        dateText.addEventListener('click', () => selectDate(dateInfo));
+        
+        // 图表容器
+        const chartContainer = document.createElement('div');
+        chartContainer.className = 'mini-chart-container';
+        
+        // 添加加载状态
+        const loading = document.createElement('div');
+        loading.className = 'chart-loading';
+        loading.innerHTML = '⌛';
+        chartContainer.appendChild(loading);
+        
+        dateItem.appendChild(dateText);
+        dateItem.appendChild(chartContainer);
+        submenu.appendChild(dateItem);
+
+        // 延迟渲染图表
+        setTimeout(async () => {
+            try {
+                const chartData = await prepareChartData(datesWithData);
+                renderMiniChart(chartContainer, chartData, dateInfo.dateLabel);
+                loading.remove();
+            } catch (e) {
+                loading.innerHTML = '❌ 数据不可用';
+            }
+        }, 0);
+    });
+    
+    submenu.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('click', globalClickHandler);
+    
+    // 保存当前子菜单引用
+    currentSubmenu = submenu;
+
+    const rect = target.getBoundingClientRect();
+    submenu.style.position = 'fixed';
+    submenu.style.left = `${rect.right + 5}px`;
+    submenu.style.top = `${rect.top}px`;
+    
+    document.body.appendChild(submenu);
+}
+
+async function fetchTotalPopulation(url) {
+    if (chartCache.has(url) && chartCache.get(url) !== null) {
+        return chartCache.get(url);
+    }
+
+    console.log("开始获取数据:", url);
+    let total = 0;
+    let validCount = 0;
+
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const worksheet = workbook.Sheets['MASTER LIST (ADMIN1)'];
+
+        if (!worksheet) {
+            throw new Error('找不到指定工作表');
+        }
+
+        for (let row = 4; row <= 21; row++) { // 5-22行
+            const cellAddress = XLSX.utils.encode_cell({ c: 2, r: row });
+            const cell = worksheet[cellAddress];
+
+            console.log(`检查单元格: ${cellAddress}, 值:`, cell ? cell.v : '空');
+
+            if (cell) {
+                const value = parseFloat(cell.v);
+                if (!isNaN(value)) {
+                    total += value;
+                    validCount++;
+                }
+            }
+        }
+
+        console.log("最终计算 total:", total, "validCount:", validCount);
+
+        const result = validCount > 0 ? total : 0;  // 避免存 null
+        chartCache.set(url, result);
+        return result;
+
+    } catch (e) {
+        console.error('数据获取失败:', e);
+        throw e;
+    }
+}
+
+// 准备图表数据
+function prepareChartData(datesWithData) {
+    return datesWithData
+        .filter(d => d.total !== null)
+        .sort((a, b) => {
+            const aDate = extractDateFromString(a.dateLabel).dateObj;
+            const bDate = extractDateFromString(b.dateLabel).dateObj;
+            return aDate - bDate;
+        })
+        .map(d => ({
+            date: d.dateLabel,
+            value: d.total,
+            x: d.dateLabel.split('-')[0], // 显示日期部分
+            y: d.total
+        }));
+}
+
+// 渲染迷你图表
+function renderMiniChart(container, data, currentDate) {
+    if (container._chart) {
+        container._chart.destroy();
+    }
+    const canvas = document.createElement('canvas');
+    container.innerHTML = '';
+    container.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    // 高亮当前日期
+    const currentIndex = data.findIndex(d => d.date === currentDate);
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.x),
+            datasets: [{
+                data: data.map(d => d.y),
+                borderColor: '#2196F3',
+                tension: 0.4,
+                pointBackgroundColor: data.map((d, i) => 
+                    i === currentIndex ? '#FF5722' : '#4CAF50'
+                )
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => `日期: ${items[0].label}`,
+                        label: (ctx) => `总人数: ${ctx.raw}`
+                    }
+                }
+            },
+            scales: {
+                y: { display: false },
+                x: {
+                    display: true,
+                    ticks: { 
+                        maxRotation: 0,
+                        font: { size: 8 }
+                    }
+                }
+            }
+        }
+    });
+
+    container.style.height = '60px';
+    container.style.width = '180px';
+    container.appendChild(canvas);
+    container._chart = chart;
+}
+
+function globalClickHandler(e) {
+    if (!e.target.closest('.date-submenu') && !e.target.closest('.month-item')) {
+        closeDateSubmenu();
+    }
+}
+
+// 增强的关闭函数
+function closeDateSubmenu() {
+    if (currentSubmenu) {
+        currentSubmenu.querySelectorAll('.mini-chart-container').forEach(container => {
+            if (container._chart) {
+                container._chart.destroy();
+                delete container._chart;
+            }
+        });
+        document.removeEventListener('click', globalClickHandler);
+        currentSubmenu.remove();
+        currentSubmenu = null;
+    }
+}
+
+
+// 选择日期后的处理
+async function selectDate(dateInfo) {
+    if (populationChart) {
+    populationChart.destroy();
+    populationChart = null;
+}
+
+    closeDateSubmenu();
+
+    const dropdownMenu = document.getElementById('dropdownContainer');
+    const selectButton = document.getElementById('selectDataButton');
+    
+    selectButton.textContent = dateInfo.dateLabel;
+    dropdownMenu.style.display = 'none';
+    fileSelectionVisible = false;
+    
+    await loadSelectedFile(dateInfo.url, dateInfo.dateLabel);
+    selectedRegion = { name: 'North Kordofan', mode: 'origin' };
+    visualizeCurrentFile();
+
+    console.log("当前 fileMap:", fileMap);
+    console.log("当前选择的 dateInfo:", dateInfo);
+}
+
+// 辅助函数
+function monthToNumber(monthAbbr) {
+    return new Date(`${monthAbbr} 1, 2020`).getMonth();
+}
+
+// 修改后的日期处理函数
+function extractDateFromString(str) {
+    // 统一转换为DD-MMM-YYYY格式处理
+    const match = String(str).match(/(\d{1,2})-([A-Za-z]{3})-(\d{4})/i);
+    if (match) {
+        const day = parseInt(match[1]);
+        const monthAbbr = match[2].substring(0,3).toLowerCase();
+        const year = parseInt(match[3]);
+        
+        const month = new Date(`${monthAbbr} 1, 2020`).getMonth();
+        const dateObj = new Date(year, month, day);
+        
+        return {
+            valid: true,
+            day,
+            month: month + 1,
+            year,
+            dateObj
+        };
+    }
+    return { valid: false };
 }
 
 function updateCanvasPosition() {
@@ -1404,7 +1827,7 @@ function showDetailView() {
             type: 'line',
             source: 'detail-source',
             'source-layer': 'Locality_Poly_Mar2021-9inhcz',
-            paint: {'line-color': '#000', 'line-width': 2.5}
+            paint: {'line-color': '#000', 'line-width': 0.5}
         });
     }
     
@@ -1654,7 +2077,19 @@ function updateProgress(percent) {
     progressBar.textContent = Math.min(percent, 100).toFixed(0) + '%';
 }
 
+function showNoDataPopup() {
+    const popup = document.getElementById('noDataPopup');
+    popup.style.display = 'block';
 
+    setTimeout(() => {
+        popup.style.display = 'none';
+    }, 1000); // 1秒后自动隐藏
+}
+
+function hideNoDataPopup() {
+    const popup = document.getElementById('noDataPopup');
+    popup.style.display = 'none';
+}
 
 function visualizeCurrentFile() {
     if (!fileDataCache[currentFileIndex]) return;
@@ -1666,54 +2101,65 @@ function visualizeCurrentFile() {
     clearPreviousVisuals();
 
     let hasData = true; // 用来判断当前文档是否有数据
+    let migrationInfo = {}; // 用于存储当前区域的迁移数据
+    let regionName = ""; // 存储当前区域名称
 
     // 判断当前选择的是细节视图还是州级视图
     if (detailLayerAdded && selectedDetailRegion) {
-        // 细节视图：调用生成细节迁移箭头
+        // 细节视图
         const { hrpcode, name } = selectedDetailRegion;
+        regionName = name;
+
         // 获取当前区域的迁移数据
         const data = migrationDetailData[hrpcode];
         if (!data || Object.values(data).every(v => v === 0)) {
             hasData = false;
         } else {
             generateDetailMigration(hrpcode, name);
+            migrationInfo = data; // 存储数据用于绘制饼图
         }
     } else if (selectedRegion) {
         // 州级视图
         const { name, mode } = selectedRegion;
+        regionName = name;
+
         if (mode === 'displacemet') {
-            // 检查该地区的迁入数据是否全为0
+            // 检查该地区的迁入数据是否全为 0
             const regionData = inflowData[name];
             if (!regionData || Object.values(regionData).every(v => v === 0)) {
                 hasData = false;
             } else {
                 generateInflowVisualization(name, '#FF4444');
+                migrationInfo = regionData; // 存储数据用于绘制饼图
             }
         } else {
-            // outflow 模式
+            // 迁出模式
             const regionData = migrationData[name];
             if (!regionData || Object.values(regionData).every(v => v === 0)) {
                 hasData = false;
             } else {
                 generateMigrationVisualization(name);
+                migrationInfo = regionData; // 存储数据用于绘制饼图
             }
         }
     } else {
         // 默认展示示例区域
-        const sampleRegion = "Aj Jazirah";
+        regionName = "Aj Jazirah";
         if (currentMode === 'displacemet') {
-            const sampleData = inflowData[sampleRegion];
+            const sampleData = inflowData[regionName];
             if (!sampleData || Object.values(sampleData).every(v => v === 0)) {
                 hasData = false;
             } else {
-                generateInflowVisualization(sampleRegion, '#FF4444');
+                generateInflowVisualization(regionName, '#FF4444');
+                migrationInfo = sampleData;
             }
         } else {
-            const sampleData = migrationData[sampleRegion];
+            const sampleData = migrationData[regionName];
             if (!sampleData || Object.values(sampleData).every(v => v === 0)) {
                 hasData = false;
             } else {
-                generateMigrationVisualization(sampleRegion);
+                generateMigrationVisualization(regionName);
+                migrationInfo = sampleData;
             }
         }
     }
@@ -1721,8 +2167,10 @@ function visualizeCurrentFile() {
     // 如果没有数据则显示弹窗
     if (!hasData) {
         showNoDataPopup();
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
     } else {
         hideNoDataPopup();
+        updateMigrationChart(regionName, migrationInfo); // 生成饼图
     }
 
     // 更新其他界面状态
@@ -2013,7 +2461,6 @@ function processExcelData(workbook) {
 function handleRegionClick(e) {
     if (!interactionEnabled) return;
 
-
     const feature = e.features[0];
     const gid = feature.properties.GID_1;
     const regionName = regionNames[gid];
@@ -2026,25 +2473,74 @@ function handleRegionClick(e) {
     // 立即更新可视化
     visualizeCurrentFile();
 
-    // 使用当前文件数据进行可视化
+    // 处理迁移数据
+    let migrationInfo = {};
+    let hasData = false; // 是否有数据的标志
     if (currentMode === 'origin') {
         const matchedOrigin = originNames.find(name => name === regionName);
         if (matchedOrigin && migrationData[matchedOrigin]) {
             generateMigrationVisualization(matchedOrigin);
+            migrationInfo = migrationData[matchedOrigin]; // 迁出数据
+            hasData = true;
         }
     } else {
         if (inflowData[regionName]) {
-            generateInflowVisualization(regionName, '#FF4444');
+            generateInflowVisualization(regionName, '#85CAC5');
+            migrationInfo = inflowData[regionName]; // 迁入数据
+            hasData = true;
         }
     }
+
+    // 处理并显示饼图
+    if (hasData) {
+        hideNoDataPopup();
+        updateMigrationChart(regionName, migrationInfo);
+        document.getElementById("migration-info").style.display = "block"; // 显示数据框
+    } else {
+        showNoDataPopup();
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+    }
+}
+
+function updateMigrationChart(regionName, data) {
+    if (!data || Object.keys(data).length === 0) {
+        document.getElementById("migration-info").style.display = "none";
+        return;
+    }
+
+    // 获取前三占比地区 + 其他
+    let sortedData = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    let top3 = sortedData.slice(0, 3);
+    let otherSum = sortedData.slice(3).reduce((sum, entry) => sum + entry[1], 0);
+
+    let labels = top3.map(d => d[0]);
+    let values = top3.map(d => d[1]);
+    if (otherSum > 0) {
+        labels.push("other");
+        values.push(otherSum);
+    }
+
+    const maxMigration = top3.length > 0 ? top3[0][1] : 0;
+
+    // 更新左下角信息框
+    document.getElementById("region-name").textContent = `Area: ${regionName}`;
+    document.getElementById("max-migration").textContent = `Maximum migrant population: ${maxMigration}`;
+
+    // 显示信息框
+    document.getElementById("migration-info").style.display = "block";
+
+    // 渲染饼图
+    renderPieChart(labels, values);
 }
 
 function generateDetailMigration(hrpcode, targetCity) {
     currentMode = 'displacemet'; // 确保模式同步
     clearPreviousVisuals();
+    
     const migrationData = migrationDetailData[hrpcode];
     if (!migrationData) {
         console.warn(`无迁移数据 for HRpcode: ${hrpcode}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
         return;
     }
 
@@ -2057,14 +2553,12 @@ function generateDetailMigration(hrpcode, targetCity) {
         targetCoords = hrpcodeMapping[hrpcode] || 
             locations_city.find(c => c.name === targetCity)?.coords;
     } else {
-        // 常规查询逻辑
         targetCoords = locations_city.find(c => c.name === targetCity)?.coords;
     }
 
-    // 获取目标城市坐标（终点）
-    const target = locations_city.find(c => c.name === targetCity);
-    if (!target) {
+    if (!targetCoords) {
         console.warn(`目标城市坐标缺失: ${targetCity}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
         return;
     }
 
@@ -2073,44 +2567,47 @@ function generateDetailMigration(hrpcode, targetCity) {
         .filter(([_, v]) => v > 0)
         .sort((a, b) => b[1] - a[1]);
 
+    if (validMigrations.length === 0) {
+        console.warn(`没有有效的迁移数据 for ${targetCity}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+        return;
+    }
+
     validMigrations.forEach(([originState, count]) => {
-        // 获取州级中心坐标（起点）
         const originCoords = getStateCenter(originState);
         if (!originCoords) {
             console.warn(`州级坐标缺失: ${originState}`);
             return;
         }
 
-        // 使用直线生成逻辑
+        // 生成箭头
         const curvePoints = calculateStraightLine(originCoords, targetCoords);
-
-        // 动态计算箭头宽度（基于迁移量级）
         const lineWidth = Math.max(3, Math.min(12, Math.log10(count) * 2));
 
-        // 创建带状态标识的图层ID
         const layerId = `state-flow-${originState}-to-${targetCity}`
             .replace(/\s+/g, '_')
             .toLowerCase();
 
-        // 存储元数据
         layerMetaMap.set(layerId, {
-          points: curvePoints,
-         lineWidth: lineWidth,
-         count: count,
-          color: '#FF4444',
-         dashArray: [0],
-         originName: originState,       // 存储起点名称（州名）
-        destinationName: targetCity    // 存储终点名称（城市名）
-         });
+            points: curvePoints,
+            lineWidth: lineWidth,
+            count: count,
+            color: '#85CAC5',
+            dashArray: [0],
+            originName: originState,
+            destinationName: targetCity
+        });
 
-        currentLayers.push(layerId); // 新增：将图层ID加入绘制列表
-        // 添加动画小球（参数与迁入模式一致）
-        createBallAnimation(curvePoints, count, '#FF4444', {
+        currentLayers.push(layerId);
+        createBallAnimation(curvePoints, count, '#85CAC5', {
             size: Math.max(8, Math.min(20, count / 5000)),
             speed: Math.max(0.5, Math.min(2, 1 - (count / 100000)))
         });
-        createPopulationMarker(originCoords, count, '#FF4444');
+        createPopulationMarker(originCoords, count, '#85CAC5');
     });
+
+    // 生成数据框 & 饼图
+    updateMigrationChart(targetCity, migrationData);
 }
 
 function getStateCenter(stateName) {
@@ -2187,7 +2684,7 @@ function createPopulationMarker(coords, count, color) {
         return;
     }
 
-    const rgbaColor = hexToRgba(color, 0.7); // 设置70%不透明度
+    const rgbaColor = hexToRgba(color, 0.0001); // 设置70%不透明度
     const baseSize = 1;
     const maxSize = 40;
     const size = Math.min(maxSize, baseSize + Math.log(count) * 3);
@@ -2198,7 +2695,7 @@ function createPopulationMarker(coords, count, color) {
     container.style.height = `${size}px`;
     container.style.background = color;
     container.style.borderColor = rgbaColor; // 同步边框透明度
-    container.style.opacity = '0.9'; // 额外叠加透明度增强效果
+    container.style.opacity = '0.01'; // 额外叠加透明度增强效果
 
     // 添加悬停提示
     container.setAttribute('title', `MigrationPopulation: ${count.toLocaleString()}`);
@@ -2319,9 +2816,9 @@ function createIconRow(icons) {
 
 
 function calculateSelfCurve(start) {
-    const radius = 0.3;
+    const radius = 0.6;
     const startAngle = 180;
-    const endAngle = -70;
+    const endAngle = -110;
     const steps = 110;
     const [x0, y0] = start;
     const points = [];
@@ -2381,6 +2878,23 @@ function createBallAnimation(points, count, color = '#418FDE') {
         currentAnimations.push(requestAnimationFrame(animate));
     };
     animate();
+}
+
+let migrationChart;
+function renderPieChart(labels, data) {
+    if (migrationChart) migrationChart.destroy();
+    
+    const ctx = document.getElementById("migration-chart").getContext("2d");
+    migrationChart = new Chart(ctx, {
+        type: "pie",
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: ["#ff6384", "#36a2eb", "#ffce56", "#999999"]
+            }]
+        }
+    });
 }
 
 function clearPreviousVisuals() {
@@ -2486,5 +3000,9 @@ window.onload = function() {
 <select id="dateDropdown" onchange="handleDropdownChange()">
     <option value="">Select a date</option>
 </select>
+<div id="map-footer">
+    Source: OpenStreetMap 
+    Note: This map is for illustration purposes only. The boundaries and names shown and the designations used on this map do not imply official endorsement or acceptance by the International Organization for Migration.
+</div>
 </body>
 </html>
