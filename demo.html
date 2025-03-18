@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sudan Crisis Monitor</title>
+    <style>
+        /* ========== 全局标题样式 ========== */
+        .global-header {
+            position: relative;
+            height: 220px;
+            background: linear-gradient(rgba(0,51,160,0.2), rgba(0,51,160,0.3)),
+                        url(images/backimg.jpg) center/cover no-repeat;
+            padding: 40px 50px;
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            z-index: 1000;
+            /* 新增定位上下文 */
+            position: relative;
+        }
+
+        .logo-container {
+            position: absolute;
+            right: 30px;
+            top: 50px;  /* 上移logo位置 */
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            z-index: 1001;
+            background: rgba(255,255,255,1);
+            padding: 8px 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .logo {
+            height: 40px;  /* 统一logo高度 */
+            width: auto;
+            transition: transform 0.3s ease;
+        }
+
+        /* 调整标题区域高度 */
+        .global-header {
+            height: 300px;  /* 适当降低标题区高度 */
+            padding: 30px 40px;
+        }
+
+        /* 优化内容区域布局 */
+        .header-content {
+            margin-top: 10px;  /* 下移标题内容 */
+            max-width: 80%;
+            padding-right: 300px;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .logo-container {
+                right: 15px;
+                top: 15px;
+                gap: 10px;
+                padding: 6px 10px;
+            }
+            .logo {
+                height: 28px;
+            }
+            .header-content {
+                padding-right: 150px;
+            }
+        }
+        .main-title {
+            font: 600 36px/1.2 "Arial", sans-serif;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            color: rgba(255,255,255,0.95);
+        }
+
+        .main-title::before {
+            content: "";
+            display: inline-block;
+            width: 45px;
+            height: 3px;
+            background: #FFD700;
+            margin-right: 20px;
+        }
+
+        .subtitle {
+            font: 500 22px/1.4 "Arial", sans-serif;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 18px;
+        }
+
+        .description {
+            font: 16px/1.6 "Arial", sans-serif;
+            color: rgba(255,255,255,0.85);
+            max-width: 800px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        /* ========== 主容器样式 ========== */
+        .scroll-container {
+            min-width: 100vw;
+            min-height: 100vh;
+            overflow: auto;
+            background: #f0f2f5;
+            padding: 40px 20px;
+            padding-top: 60px;
+            padding-bottom: 60px;
+            transition: padding-top 0.3s ease;
+        }
+
+        /* ========== 地图卡片样式 ========== */
+        .map-card {
+            margin: 30px auto;
+            position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            background: white;
+            width: 98%;
+        }
+
+        .map-title {
+            position: absolute;
+            top: -25px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(255,255,255,0.9);
+            padding: 8px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            font: 600 18px/1.5 "微软雅黑", sans-serif;
+            color: #0033A0;
+            display: flex;
+            align-items: center;
+        }
+
+        .map-title::before {
+            content: "";
+            display: block;
+            width: 5px;
+            height: 18px;
+            background: #418FDE;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        /* ========== 地图容器样式 ========== */
+        #map1-container, #map2-container {
+            width: 100%;
+            height: 88vh;
+            position: relative;
+        }
+
+        .original-map {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 4px;
+        }
+
+        /* ========== 底部样式 ========== */
+        .global-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 12px 20px;
+            background: rgba(255,255,255,0.9);
+            border-top: 1px solid #e8e8e8;
+            text-align: center;
+            font: 14px/1.5 "Arial", sans-serif;
+            color: #666;
+            z-index: 999;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .global-footer span {
+            margin: 0 8px;
+        }
+
+        .global-footer::before,
+        .global-footer::after {
+            content: "";
+            display: inline-block;
+            width: 20px;
+            height: 1px;
+            background: #ddd;
+        }
+
+        .global-footer::before {
+            margin-right: 12px;
+        }
+
+        .global-footer::after {
+            margin-left: 12px;
+        }
+
+        /* ========== 滚动隐藏效果 ========== */
+        .scroll-down .global-header {
+            transform: translateY(-100%);
+        }
+
+        /* ========== 基础样式 ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            overflow-y: scroll;
+            font-family: "Arial", sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <img src="images/UCL-logo.png" alt="Yuhan University" class="logo">
+        <img src="images/spacetimelab_logo.png" alt="SpaceTimeLab" class="logo">
+        <img src="images/whu_logo.png" alt="武汉大学" class="logo">
+    </div>
+    <header class="global-header">
+        <div class="header-content">
+            <h1 class="main-title">Sudan Crisis Monitor</h1>
+            <p class="description">Comprehensive visualization of population displacement and humanitarian needs across Sudan. Explore interactive maps and timeline data to understand the evolving situation.</p>
+        </div>
+    </header>
+
+    <div class="scroll-container">
+        <div class="map-card">
+            <div class="map-title">Space-Time Displacement Visualization</div>
+            <div id="map1-container">
+                <iframe class="original-map" src="Space-TimeDisplacementVisualization.html"></iframe>
+            </div>
+        </div>
+
+        <div class="map-card">
+            <div class="map-title">Displacement Tracking Matrix Visualization</div>
+            <div id="map2-container">
+                <iframe class="original-map" src="DisplacementTrackingMatrixVisualization.html"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <footer class="global-footer">
+        <span>Supported by</span>
+        <strong style="color: #0033A0">SpaceTimeLab(UCL)</strong>
+        <span>and</span>
+        <strong style="color: #0033A0">Wuhan University</strong>
+    </footer>
+
+    <script>
+        // 滚动隐藏逻辑
+        let lastScroll = 0;
+        const header = document.querySelector('.global-header');
+        
+        window.addEventListener('scroll', () => {
+            const currentScroll = window.pageYOffset;
+            
+            if (currentScroll > lastScroll && currentScroll > 100) {
+                document.body.classList.add('scroll-down');
+                document.querySelector('.scroll-container').style.paddingTop = '40px';
+            } else {
+                document.body.classList.remove('scroll-down');
+                document.querySelector('.scroll-container').style.paddingTop = '60px';
+            }
+            lastScroll = currentScroll;
+        });
+
+        // 地图标题位置调整
+        function adjustTitles() {
+            document.querySelectorAll('.map-card').forEach(card => {
+                const title = card.querySelector('.map-title');
+                const container = card.querySelector('div[id$="container"]');
+                title.style.left = `${container.offsetLeft + 20}px`;
+            });
+        }
+
+        window.addEventListener('load', () => {
+            adjustTitles();
+            window.addEventListener('resize', adjustTitles);
+        });
+    </script>
+</body>
+</html>
