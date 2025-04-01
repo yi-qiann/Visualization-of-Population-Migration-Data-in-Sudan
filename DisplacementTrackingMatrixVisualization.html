@@ -1,0 +1,4442 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>苏丹人口迁移可视化系统</title>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 20px; font-family: "微软雅黑"; }
+        #map { position: absolute; top: 0; bottom: 35px; width: calc(100% - 40px); 
+            border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        #map-footer {
+               position: fixed;
+                 bottom: 0;
+                left: 0;
+              width: 100%;
+              background: rgba(255, 255, 255, 0.9);
+               padding: 8px 20px;
+              font-size: 12px;
+              text-align: center;
+              border-top: 1px solid #ddd;
+              z-index: 1000; /* 确保在地图上层 */
+               box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+                  } 
+        .controls { background: #f8f9fa; padding: 15px; border-radius: 8px;
+                   box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 10px; }
+            .ball {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            position: absolute;
+            background: rgba(65, 143, 222, 0.8);
+            border: 1px solid #418FDE;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: left 0.1s, top 0.1s;
+            z-index: 999;
+        }
+        .population-sphere {
+            opacity: 0.9 !important; /* 强制透明度 */
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #418FDE;
+            border: 2px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transform: translate(-50%, -50%);
+            transition: opacity 0.3s; /* 添加透明度过渡效果 */
+            cursor: pointer;
+            position: absolute;
+        }
+        .mapboxgl-popup { max-width: 280px; font-family: "微软雅黑"; }
+        .mapboxgl-popup-content { padding: 15px; border-radius: 6px; }
+        #arrow-canvas {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            pointer-events: none;
+            z-index: 1002;
+        }
+        .population-marker.compact {
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+    }
+    .icon-entry {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+   
+ 
+    .count {
+        font-size: 14px;
+        color: #333;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .partial-person {
+        height: 24px;
+        overflow: hidden;
+        margin-left: -7px;
+    }
+    .partial-person::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: calc(100% - var(--partial-height));
+        background: linear-gradient(to top, rgba(0,0,0,0.2) 20%, transparent);
+    }
+    .population-row {
+        display: flex;
+        flex-direction: row-reverse;
+        margin-bottom: 4px;
+    }
+    #legend {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(255,255,255,0.9);
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .legend-icon {
+        width: 32px;
+        height: 32px;
+        margin-right: 10px;
+    }
+
+    #toggleMarkers {
+        display: block;
+        width: 100%;
+        padding: 8px;
+        margin-top: 10px;
+        background: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    #toggleDetail {
+    background: #2196F3; /* 与主按钮同色 */
+    }
+        .controls {
+            /* 原有样式保持不变 */
+            position: relative;
+            z-index: 1000; /* 确保控件在地图上层 */
+        }
+        #fileList {
+            max-height: 150px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+         /* 顶部菜单栏 */
+    /* 顶部菜单栏 */
+    #menu-bar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 240px;
+    height: auto; /* 替代固定高度 */
+    background: rgba(51, 131, 217, 0.97);
+    padding: 12px 8px; 
+    box-shadow: 2px 0 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    align-items: flex-start; 
+}
+
+/* 按钮组容器 */
+#menu-bar > div {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+/* 分割按钮垂直布局 */
+.split-button.vertical {
+    display: flex;
+    flex-direction: column;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.split-button .left-part,
+.split-button .right-part {
+    width: 100%;
+    padding: 12px 18px;
+    background: rgba(255,255,255,0.05);
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.split-button .right-part {
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+@media (max-width: 768px) {
+  .compact-display {
+    font-size: 0.85em;
+  }
+}
+/* 所有按钮通用样式 */
+#menu-bar button {
+    width: 100%;
+    height: auto !important; /* 覆盖原有固定高度 */
+    padding: 12px 18px;
+    text-align: left;
+    background: rgba(255,255,255,0.05);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#menu-bar button:hover {
+    background: rgba(255,255,255,0.15);
+    transform: translateX(3px);
+}
+
+/* 下拉菜单调整 */
+.custom-dropdown {
+    left: 100% !important;
+    top: 0 !important;
+    margin-left: 5px;
+    min-width: 180px;
+    background: rgba(2, 153, 254, 0.95) !important;
+    border: 1px solid rgba(89, 153, 248, 0.8) !important;
+    backdrop-filter: blur(5px);
+}
+
+#dropdownContainer {
+    left: 100% !important;
+    top: 100% !important;
+    margin-top: -5px;
+}
+.menu-group {
+    width: 100%;
+    padding: 10px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+
+/* 图标调整 */
+.gear-icon {
+    width: 20px;
+    height: 20px;
+    filter: brightness(0) invert(1);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    #menu-bar {
+        width:60px;
+        padding: 10px 5px;
+    }
+    
+    #menu-bar button span,
+    .split-button .left-part {
+        display: none;
+    }
+    
+    .split-button .right-part {
+        justify-content: center;
+    }
+    
+    #menu-bar button::after {
+        content: none !important;
+    }
+    
+    .gear-icon {
+        margin: 0;
+    }
+}
+
+/* 主内容区偏移 */
+body {
+    margin-left: 0;
+    transition: none;
+}
+
+@media (max-width: 768px) {
+    body {
+        margin-left: 60px;
+    }
+}
+        
+    /* 鼠标悬停时颜色变浅 */
+    #menu-bar button:hover {
+            background: #64B5F6;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+        }
+    /* 下拉时间列表样式 */
+    #dropdownContainer {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2196F3; /* 与按钮背景色一致 */
+    border: 1px solid #1976D2; /* 深色边框 */
+    border-radius: 5px; /* 匹配按钮圆角 */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* 与按钮阴影一致 */
+    width: 160px; /* 固定宽度与按钮一致 */
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: center;
+    margin-top: 5px;
+}
+    #fileList {
+    list-style: none;
+    padding: 8px 0; /* 增加上下内边距 */
+    margin: 0;
+    }
+
+    #dropdownContainer ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    #dropdownContainer li {
+    padding: 10px;
+    cursor: pointer;
+    transition: background 0.3s;
+    color: rgb(83, 151, 234); /* 文字颜色改为白色 */
+    }
+
+    #dropdownContainer li:hover {
+    background: #1976D2; /* 悬停颜色加深 */
+    }
+    #dropdownContainer::-webkit-scrollbar {
+    width: 6px;
+    }
+    #dropdownContainer::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.1);
+}
+
+#dropdownContainer::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.3);
+    border-radius: 3px;
+}
+    #menu-bar {
+    /* 原有样式保持不变 */
+    justify-content: space-between; /* 使左右元素分列两端 */
+}
+
+.menu-item, .split-button > div {
+    width: 100%;
+    padding: 12px 20px;
+    text-align: left;
+    background: rgba(255,255,255,0.05);
+    border: none;
+    color: #ecf0f1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 4px;
+}
+
+/* 下拉菜单定位调整 */
+.dropdown-container {
+    left: 100%;
+    top: 0;
+    margin-left: 5px;
+}
+.tab-buttons {
+    display: flex;
+    margin-bottom: 8px;
+}
+.tab-header {
+    width: 100%;
+    display: flex;
+    border-bottom: 1px solid #34495e;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 14px 0;
+    background: none;
+    border: none;
+    color: #ecf0f1;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tab-btn:hover {
+    background: #34495e;
+}
+
+.tab-btn.active {
+    background: #3498db;
+}
+
+.tab-btn.active {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+/* 选项卡内容 */
+.tab-content {
+    display: none;
+    flex: 1;
+    min-height: 200px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .menu-logo {
+        height: 30px;
+        padding-right: 10px;
+    }
+    
+    .logo-container {
+        order: 1; /* 在小屏幕时调整显示顺序 */
+    }
+    
+    #menu-bar {
+        flex-wrap: wrap;
+    }
+}
+.state-label {
+    background: rgba(255, 255, 255, 0.8);
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.custom-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2196F3;
+    border: 1px solid #1976D2;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    width: 160px;
+    z-index: 1001;
+    margin-top: 5px;
+}
+
+.custom-dropdown ul {
+    list-style: none;
+    padding: 8px 0;
+    margin: 0;
+}
+
+.custom-dropdown li {
+    padding: 10px;
+    color: rgb(255, 255, 255);
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.custom-dropdown li:hover {
+    background: #1976D2;
+}
+
+#modeSwitch::after {
+    content: " ▼";
+    font-size: 0.8em;
+}
+#adminLevel {
+    background: #9C27B0; /* 紫色区别于其他按钮 */
+}
+
+#adminLevel.active {
+    background: #7B1FA2; /* 激活状态深紫色 */
+}
+
+/* 保持下拉菜单统一样式 */
+.custom-dropdown {
+    /* 原有样式保持不变 */
+    width: 140px; /* 稍宽以适应更长文字 */
+}
+
+.custom-dropdown li.active {
+    background: #1976D2;
+    font-weight: bold;
+}
+#modeSwitch:disabled {
+    background-color: #9C27B0 !important; /* 紫色表示禁用 */
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+#modeSwitch:disabled::after {
+    content: " (Locality)";
+    font-size: 0.8em;
+}
+#legend {
+  position: absolute;
+  bottom: 65px;
+  width:140px;
+  right: 20px;
+  background: rgba(255,255,255,0.95);
+  padding: 15px 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.legend-content {
+  display: flex;
+  align-items: center;
+  gap: 50px;
+}
+
+/* 文字标注样式 */
+.labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 84px; /* 与球体总高度一致 */
+  font-size: 12px;
+  color: #666;
+  padding: 4px 0;
+}
+
+.labels div {
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* 相切圆容器 */
+.sphere-stack {
+  position: relative;
+  height: 84px; /* 4个球总高度 */
+}
+
+/* 通用球体样式 */
+.sphere {
+  position: absolute;
+  right: 0;
+  border-radius: 50%;
+  background: #418FDE;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* 尺寸计算（基于对数比例） */
+.s1 { /* 50万+ */
+  width: 36px;
+  height: 36px;
+  bottom: 0;
+  z-index: 1;
+}
+
+.s2 { /* 10万-50万 */
+  width: 28px;
+  height: 28px;
+  bottom: 28px; /* 36 - (36-28)/2 */
+  z-index: 2;
+}
+
+.s3 { /* 2万-10万 */
+  width: 20px;
+  height: 20px;
+  bottom: 50px; /* 28 + (28-20)/2 */
+  z-index: 3;
+}
+
+.s4 { /* <2万 */
+  width: 12px;
+  height: 12px;
+  bottom: 72px; /* 50 + (20-12)/2 */
+  z-index: 4;
+}
+
+/* 微调相切效果 */
+.s2 { transform: translateX(-2px); }
+.s3 { transform: translateX(-4px); }
+.s4 { transform: translateX(-6px); }
+
+.year-dropdown {
+  background: #2c8fe6;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 120px;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 10px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.month-item {
+  position: relative; /* 为子菜单定位提供参考 */
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  font-size: 0.9em;
+}
+
+.has-data {
+  background: #2196F3;
+  color: white;
+}
+
+.no-data {
+  background: #00BCD4;
+  color: white;
+  cursor: not-allowed;
+}
+
+.date-submenu {
+  position: absolute;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  padding: 8px;
+  z-index: 1001;
+  min-width: 160px;
+  transition: opacity 0.3s ease;
+}
+
+.mini-chart-container {
+    position: relative;
+    margin-top: 5px;
+    transition: height 0.3s ease-out;
+}
+
+.chart-loading {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    padding: 5px 0;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+.date-text {
+    padding: 5px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.date-text:hover {
+    background: #f5f5f5;
+}
+.split-button {
+    display: flex;
+    width: 200px; /* 根据需要调整宽度 */
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.left-part {
+    flex: 4;
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+    background-color: #2196F3;
+    color: white;
+}
+
+.right-part {
+    flex: 1;
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+    background-color: #1976D2;
+    color: white;
+}
+
+.gear-icon {
+    width: 16px;
+    height: 16px;
+}
+#select-data-btn {
+    position: relative;
+    width: 200px;
+    padding: 8px 12px;
+}
+#timeline-container {
+    position: absolute;
+    top: calc(100% + 8px); /* 位于按钮下方8px */
+    left: 20%;
+    transform: none; /* 移除水平偏移 */
+    width: 200px; /* 与按钮同宽 */
+    max-width: none; /* 移除最大宽度限制 */
+    max-height: 80vh; /* 限制高度最多到屏幕的三分之一 */
+    background: white;
+    border: 1px solid #ccc;
+    z-index: 1100; /* 提高层级，确保高于地图 */
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+    display: none; /* 初始隐藏 */
+    overflow-y: auto; /* 允许垂直滚动 */
+    transition: max-height 0.8s ease-in-out;
+}
+.timeline {
+    position: relative;
+    display: block;
+    right: 0;
+    width: 95%; 
+    max-height: 80vh; /* 限制时间轴自身的高度 */
+    overflow-y: auto; /* 允许垂直滚动 */
+    padding: 20px 10px; /* 缩小整体大小 */
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin: 0 auto;
+    z-index: 1200;
+}
+.timeline-month {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #eee; /* 可选：用于分隔月份 */
+}
+@media (max-width: 768px) {
+    #timelineContainer {
+        width: 160px !important; /* 移动端更窄 */
+        margin-left: 60px; /* 适配折叠后的菜单栏 */
+        left: 5px !important;
+    }
+    
+    .timeline-month {
+        flex-wrap: wrap; /* 小屏换行显示 */
+        gap: 4px;
+    }
+}
+.timeline-month:hover {
+    background-color: #f8f8f8;
+}
+
+.population-tag {
+    min-width: 50px; /* 保证最小可见宽度 */
+    transition: width 0.5s ease-out, 
+                background-color 0.3s ease;
+    will-change: width; /* 优化动画性能 */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.population-tag:hover {
+    transform: scale(1.05);
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+    transform: translateY(-1px);
+}
+
+.data-container {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* 左侧显示的月份文本 */
+.timeline-date {
+    font-weight: bold;
+    color: #333;
+}
+
+/* 右侧事件（蓝色标签）的容器，垂直排列 */
+.timeline-events-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* 每个事件容器，可用于额外定位，如右对齐 */
+.timeline-event {
+    text-align: right;
+}
+.migration-label {
+    display: inline-block;
+    background-color: #007bff;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 5px;
+}
+.marker {
+    width: 6px;
+    height: 4px;
+    background: #007bff;
+    border-radius: 50%;
+    position: absolute;
+    left: 50%;
+    top: -25px;
+    transform: translateX(-50%);
+}
+
+.flag {
+    position: absolute;
+    left: 50%;
+    width: 6px;
+    transform: translateX(-50%);
+    background: red;
+    color: white;
+    padding: 4px 8px;
+    font-size: 0.9em;
+    white-space: nowrap;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);
+    margin-top: 8px;
+    min-height: 30px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.flag:hover {
+    background: #ff6666;
+    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+
+.toggle-btn {
+    padding: 10px 20px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+.toggle-btn:hover {
+    background: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+.timeline-tooltip {
+    position: fixed;
+    background: rgba(0,0,0,0.9);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    pointer-events: none;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 1000;
+}
+
+.tooltip-header {
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #2196F3;
+}
+
+.tooltip-content {
+    white-space: nowrap;
+}
+#selectDataButton {
+    display: none;
+}
+
+    </style>
+</head>
+<body>
+    <div id="menu-bar">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showTabAndSetMode('data')">Data</button>
+            <button class="tab-btn" onclick="showTab('settings')">Settings</button>
+        </div>
+    
+        <!-- Data 选项卡内容 -->
+        <div id="dataTab" class="tab-content active">
+            <div class="menu-section">
+                <div class="timeline-container" id="timelineContainer" style="display: none;">
+                    <div class="timeline" id="timeline"></div>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Settings 选项卡内容 -->
+        <div id="settingsTab" class="tab-content">
+            <div class="menu-section">
+                <!-- 原Settings部分的结构 -->
+                <div style="position: relative; margin-bottom: 15px;">
+                    <button id="modeSwitch" class="vertical-btn" onclick="toggleViewMode()">
+                        Current Mode：origin
+                    </button>
+                    <div id="modeDropdown" class="custom-dropdown vertical">
+                        <ul>
+                            <li onclick="changeMode('origin')">origin</li>
+                            <li onclick="changeMode('displacemet')">displacemet</li>
+                        </ul>
+                    </div>
+                </div>
+    
+                <div style="position: relative;">
+                    <button id="adminLevel" class="vertical-btn" onclick="toggleAdminLevel()">
+                        Select Administrative Level ▼
+                    </button>
+                    <div id="adminDropdown" class="custom-dropdown vertical">
+                        <ul>
+                            <li onclick="changeAdminLevel('state')">State</li>
+                            <li onclick="changeAdminLevel('detail')">Locality</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="file-name-display">No file selected</div>
+    <div id="legend">
+    </div>
+    
+    <div id="calendarContainer" style="display: none;"></div>
+    <div id="loading" style="display:none; position: absolute; top: 60px; left: 20px; background: white; padding: 10px;">
+        正在加载文件列表...
+    </div>
+    <div id="noDataPopup" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.9); padding: 20px 30px; border: 1px solid #ccc; border-radius: 8px; z-index: 1003; font-size: 16px; color: #333;">
+        No data
+      </div>
+    <div id="map"></div>
+    <canvas id="arrow-canvas"></canvas>
+    <div id="migration-info" style="position: absolute;top: 80px; right: 20px; z-index: 999;transform: scale(0.85);transform-origin: top right;background: rgba(255,255,255,0.95);padding: 10px; border-radius: 8px;box-shadow: 0 2px 10px rgba(0,0,0,0.15);">
+        <h3 id="region-name"></h3>
+        <canvas id="migration-chart" width="250" height="250"></canvas>
+        <p id="max-migration"></p>
+    </div>
+    <div id="legend">
+        <div class="legend-title">ESTIMATED IDPS</div>
+        <div class="legend-content">
+          <!-- 标注文字 -->
+          <div class="labels">
+            <div>＜20 k</div>
+            <div>20 k-100 k</div>
+            <div>100 k-500 k</div>
+            <div>500 k+</div>
+          </div>
+          <!-- 相切圆容器 -->
+          <div class="sphere-stack">
+            <div class="sphere s4"></div>
+            <div class="sphere s3"></div>
+            <div class="sphere s2"></div>
+            <div class="sphere s1"></div>
+          </div>
+        </div>
+      </div>
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1Ijoid2FuZ2hhb3JhbjYyMzEiLCJhIjoiY203YnZ4YjByMGY1YjJtcGk0eWRyNTVrMCJ9.Xb8-J05wjNOOErd3Vf-IIw';
+
+// Canvas 相关变量
+let arrowCanvas, arrowCtx;
+const layerMetaMap = new Map();
+let hoverPopup = null; // 新增：全局悬浮提示框
+let detailLayerAdded = false; // 跟踪细节图层状态
+let interactionEnabled = true; // 控制交互状态
+let clickHandler = null;       // 保存点击事件句柄
+let detailClickHandler = null;  // 细节视图点击处理器
+let currentPopup = null;        // 当前弹窗对象
+let migrationDetailData = {}; // 存储细节迁移数据
+let fileQueue = [];
+let currentFileIndex = 0;
+let fileDataCache = [];
+let isManualInteraction = false; // 跟踪用户是否进行手动交互
+let totalFiles = 0;
+let selectedRegion = null; // 用于存储用户当前选中的区域 { name: string, mode: 'outflow' | 'inflow' }
+let selectedDetailRegion = null; // 新增：存储选中的细节区域信息 { hrpcode: string, name: string, mode: 'outflow' | 'inflow' }
+let fileMap = new Map(); // 存储日期和文件 URL 的映射
+let fileSelectionVisible = false;
+let dataLoaded = false;
+let locationMarkers = [];
+let autoProcessEnabled = true; // 控制自动处理开关
+let currentSubmenu = null;
+let isExpanded = false;
+let dataEvents = [];
+
+
+const citycode = {
+    "SD15034": "Al Hasahisa",
+    "SD15035": "Al Kamlin",
+    "SD15036": "Al Manaqil",
+    "SD15037": "Al Qurashi",
+    "SD15031": "Janub Al Jazirah",
+    "SD15030": "Medani Al Kubra",
+    "SD15033": "Sharg Al Jazirah",
+    "SD15032": "Um Algura",
+    "SD08106": "Al Kurmuk",
+    "SD08107": "Ar Rusayris",
+    "SD08108": "At Tadamon - BN",
+    "SD08104": "Baw",
+    "SD08105": "Ed Damazine",
+    "SD08109": "Geisan",
+    "SD08110": "Wad Al Mahi",
+    "SD06110": "Azum",
+    "SD06112": "Bendasi",
+    "SD06131": "Gharb Jabal Marrah",
+    "SD06130": "Mukjar",
+    "SD06132": "Shamal Jabal Marrah",
+    "SD06135": "Um Dukhun",
+    "SD06137": "Wadi Salih",
+    "SD06139": "Wasat Jabal Marrah",
+    "SD06138": "Zalingi",
+    "SD05140": "Abu Jabrah",
+    "SD05155": "Abu Karinka",
+    "SD05142": "Ad Du'ayn",
+    "SD05139": "Adila",
+    "SD05152": "Al Firdous",
+    "SD05163": "Assalaya",
+    "SD05160": "Bahr Al Arab",
+    "SD05148": "Shia'ria",
+    "SD05165": "Yassin",
+    "SD12073": "Al Butanah",
+    "SD12074": "Al Fao",
+    "SD12075": "Al Fashaga",
+    "SD12078": "Al Galabat Al Gharbyah - Kassab",
+    "SD12082": "Al Mafaza",
+    "SD12076": "Al Qureisha",
+    "SD12084": "AR Rahad",
+    "SD12077": "Basundah",
+    "SD12079": "Gala'a Al Nahal",
+    "SD12083": "Galabat Ash-Shargiah",
+    "SD12080": "Madeinat Al Gedaref",
+    "SD12081": "Wasat Al Gedaref",
+    "SD11052": "Halfa Aj Jadeedah",
+    "SD11053": "Madeinat Kassala",
+    "SD11055": "Reifi Aroma",
+    "SD11054": "Reifi Gharb Kassala",
+    "SD11058": "Reifi Hamashkureib",
+    "SD11056": "Reifi Kassla",
+    "SD11060": "Reifi Khashm Elgirba",
+    "SD11062": "Reifi Nahr Atbara",
+    "SD11057": "Reifi Shamal Ad Delta",
+    "SD11059": "Reifi Telkok",
+    "SD11061": "Reifi Wad Elhilaiw",
+    "SD01003": "Bahri",
+    "SD01001": "Jebel Awlia",
+    "SD01005": "Karrari",
+    "SD01007": "Khartoum",
+    "SD01004": "Sharg An Neel",
+    "SD01002": "Um Bada",
+    "SD01006": "Um Durman",
+    "SD02114": "Al Fasher",
+    "SD02116": "Al Koma",
+    "SD02169": "Al lait",
+    "SD02117": "Al Malha",
+    "SD02118": "As Serief",
+    "SD02119": "At Tawisha",
+    "SD02171": "At Tina",
+    "SD02113": "Dar As Salam",
+    "SD02124": "Kebkabiya",
+    "SD02126": "Kelemando",
+    "SD02168": "Kernoi",
+    "SD02128": "Kutum",
+    "SD02129": "Melit",
+    "SD02133": "Saraf Omra",
+    "SD02170": "Tawila",
+    "SD02120": "Um Baru",
+    "SD02136": "Um Kadadah",
+    "SD13030": "AR Rahad",
+    "SD13026": "Bara",
+    "SD13027": "Gebrat Al Sheikh",
+    "SD13029": "Gharb Bara",
+    "SD13024": "Sheikan",
+    "SD13025": "Soudari",
+    "SD13028": "Um Dam Haj Ahmed",
+    "SD13023": "Um Rawaba",
+    "SD17019": "Ad Dabbah",
+    "SD17016": "Al Burgaig",
+    "SD17018": "Al Golid",
+    "SD17015": "Delgo",
+    "SD17017": "Dongola",
+    "SD17014": "Halfa",
+    "SD17020": "Merwoe",
+    "SD10072": "Agig",
+    "SD10069": "Al Ganab",
+    "SD10063": "Dordieb",
+    "SD10066": "Hala'ib",
+    "SD10070": "Haya",
+    "SD10067": "Jubayt Elma'aadin",
+    "SD10064": "Port Sudan",
+    "SD10068": "Sawakin",
+    "SD10071": "Sinkat",
+    "SD10065": "Tawkar",
+    "SD16008": "Abu Hamad",
+    "SD16011": "Ad Damar",
+    "SD16014": "Al Buhaira",
+    "SD16009": "Al Matama",
+    "SD16012": "Atbara",
+    "SD16013": "Barbar",
+    "SD16010": "Shendi",
+    "SD14037": "Abu Hujar",
+    "SD14039": "Ad Dali",
+    "SD14040": "Ad Dinder",
+    "SD14041": "As Suki",
+    "SD14038": "Sennar",
+    "SD14042": "Sharg Sennar",
+    "SD14043": "Sinja",
+    "SD03141": "Al Radoum",
+    "SD03150": "Al Wihda",
+    "SD03166": "As Salam - SD",
+    "SD03156": "As Sunta",
+    "SD03162": "Beliel",
+    "SD03161": "Buram",
+    "SD03172": "Damso",
+    "SD03143": "Ed Al Fursan",
+    "SD03153": "Gereida",
+    "SD03144": "Kas",
+    "SD03159": "Kateila",
+    "SD03157": "Kubum",
+    "SD03145": "Mershing",
+    "SD03151": "Nitega",
+    "SD03167": "Nyala Janoub",
+    "SD03164": "Nyala Shimal",
+    "SD03158": "Rehaid Albirdi",
+    "SD03147": "Sharg Aj Jabal",
+    "SD03154": "Shattaya",
+    "SD03149": "Tulus",
+    "SD03146": "Um Dafoug",
+    "SD07090": "Abassiya",
+    "SD07088": "Abu Jubayhah",
+    "SD07104": "Abu Kershola",
+    "SD07105": "Al Leri",
+    "SD07094": "Al Quoz",
+    "SD07093": "Ar Rashad",
+    "SD07097": "Ar Reif Ash Shargi",
+    "SD07106": "At Tadamon - SK",
+    "SD07107": "Delami",
+    "SD07095": "Dilling",
+    "SD07108": "Ghadeer",
+    "SD07103": "Habila - SK",
+    "SD07098": "Kadugli",
+    "SD07089": "Talawdi",
+    "SD04115": "Ag Geneina",
+    "SD04111": "Beida",
+    "SD04121": "Foro Baranga",
+    "SD04122": "Habila - WD",
+    "SD04123": "Jebel Moon",
+    "SD04125": "Kereneik",
+    "SD04127": "Kulbus",
+    "SD04134": "Sirba",
+    "SD18028": "Abu Zabad",
+    "SD18087": "Abyei",
+    "SD18103": "Al Dibab",
+    "SD18104": "Al Idia",
+    "SD18105": "Al Khiwai",
+    "SD18102": "Al Lagowa",
+    "SD18106": "Al Meiram",
+    "SD18022": "An Nuhud",
+    "SD18086": "As Salam - WK",
+    "SD18092": "As Sunut",
+    "SD18100": "Babanusa",
+    "SD18021": "Ghubaish",
+    "SD18085": "Keilak",
+    "SD18029": "Wad Bandah",
+    "SD09044": "Ad Diwaim",
+    "SD09051": "Aj Jabalain",
+    "SD09050": "Al Gitaina",
+    "SD09049": "As Salam / Ar Rawat",
+    "SD09052": "Guli",
+    "SD09047": "Kosti",
+    "SD09046": "Rabak",
+    "SD09048": "Tendalti",
+    "SD09045": "Um Rimta"
+};
+
+
+const locations_city = [
+    { name: 'Al Hasahisa', coords: [33.290222, 14.748] },
+    { name: 'Al Kamlin', coords: [32.956083, 15.161972] },
+    { name: 'Al Manaqil', coords: [33.001778, 14.249417] },
+    { name: 'Al Qurashi', coords: [32.645306, 14.292306] },
+    { name: 'Janub Al Jazirah', coords: [33.463694, 14.181083] },
+    { name: 'Medani Al Kubra', coords: [33.597972, 14.37275] },
+    { name: 'Sharg Al Jazirah', coords: [33.570361, 15.042361] },
+    { name: 'Um Algura', coords: [33.892028, 14.465472] },
+    { name: 'Al Kurmuk', coords: [34.102639, 10.474167] },
+    { name: 'Ar Rusayris', coords: [34.388167, 11.861889] },
+    { name: 'At Tadamon - BN', coords: [33.674306, 11.706278] },
+    { name: 'Baw', coords: [34.085722, 11.339444] },
+    { name: 'Ed Damazine', coords: [34.248556, 12.074361] },
+    { name: 'Geisan', coords: [34.752528, 11.140694] },
+    { name: 'Wad Al Mahi', coords: [34.796306, 11.628361] },
+    { name: 'Azum', coords: [23.02075, 12.84725] },
+    { name: 'Bendasi', coords: [22.828417, 12.010556] },
+    { name: 'Gharb Jabal Marrah', coords: [24.006111, 13.080278] },
+    { name: 'Mukjar', coords: [23.470444, 11.884083] },
+    { name: 'Shamal Jabal Marrah', coords: [24.457611, 13.284278] },
+    { name: 'Um Dukhun', coords: [22.96075, 11.128333] },
+    { name: 'Wadi Salih', coords: [23.332, 12.444056] },
+    { name: 'Wasat Jabal Marrah', coords: [24.286972, 13.130111] },
+    { name: 'Zalingi', coords: [23.525194, 13.058611] },
+    { name: 'Abu Jabrah', coords: [26.797917, 10.956556] },
+    { name: 'Abu Karinka', coords: [26.564472, 11.593222] },
+    { name: 'Ad Du\'ayn', coords: [26.205639, 11.425] },
+    { name: 'Adila', coords: [27.003056, 11.449861] },
+    { name: 'Al Firdous', coords: [25.903639, 10.938194] },
+    { name: 'Assalaya', coords: [26.102222, 11.766] },
+    { name: 'Bahr Al Arab', coords: [26.6825, 10.173333] },
+    { name: 'Shia\'ria', coords: [25.691306, 12.524722] },
+    { name: 'Yassin', coords: [25.588917, 11.830056] },
+    { name: 'Al Butanah', coords: [34.647167, 15.0425] },
+    { name: 'Al Fao', coords: [34.093056, 14.116] },
+    { name: 'Al Fashaga', coords: [35.8125, 14.135861] },
+    { name: 'Al Galabat Al Gharbyah - Kassab', coords: [35.345556, 13.716278] },
+    { name: 'Al Mafaza', coords: [34.547083, 13.600167] },
+    { name: 'Al Qureisha', coords: [36.063444, 13.746972] },
+    { name: 'AR Rahad', coords: [34.775278, 13.246694] },
+    { name: 'Basundah', coords: [35.860917, 12.910861] },
+    { name: 'Gala\'a Al Nahal', coords: [35.117194, 13.341583] },
+    { name: 'Galabat Ash-Shargiah', coords: [35.821944, 13.382528] },
+    { name: 'Madeinat Al Gedaref', coords: [35.381667, 14.037444] },
+    { name: 'Wasat Al Gedaref', coords: [35.003083, 14.144972] },
+    { name: 'Halfa Aj Jadeedah', coords: [35.620417, 15.414861] },
+    { name: 'Madeinat Kassala', coords: [36.37175, 15.4315] },
+    { name: 'Reifi Aroma', coords: [35.958, 15.783083] },
+    { name: 'Reifi Gharb Kassala', coords: [36.09575, 15.335778] },
+    { name: 'Reifi Hamashkureib', coords: [36.644667, 16.825528] },
+    { name: 'Reifi Kassla', coords: [36.37975, 15.211028] },
+    { name: 'Reifi Khashm Elgirba', coords: [34.896139, 15.775278] },
+    { name: 'Reifi Nahr Atbara', coords: [35.386833, 15.692472] },
+    { name: 'Reifi Shamal Ad Delta', coords: [36.002444, 16.501] },
+    { name: 'Reifi Telkok', coords: [36.616833, 16.093694] },
+    { name: 'Reifi Wad Elhilaiw', coords: [36.199028, 14.566694] },
+    { name: 'Bahri', coords: [32.54725, 15.652111] },
+    { name: 'Jebel Awlia', coords: [32.576694, 15.364083] },
+    { name: 'Karrari', coords: [32.366194, 16.062667] },
+    { name: 'Khartoum', coords: [32.550611, 15.518028] },
+    { name: 'Sharg An Neel', coords: [33.290972, 15.706306] },
+    { name: 'Um Bada', coords: [32.019306, 16.360722] },
+    { name: 'Um Durman', coords: [32.36125, 15.461889] },
+    { name: 'Al Fasher', coords: [25.349306, 13.613556] },
+    { name: 'Al Koma', coords: [27.266028, 14.078556] },
+    { name: 'Al lait', coords: [26.790833, 11.923611] },
+    { name: 'Al Malha', coords: [25.6545, 17.410833] },
+    { name: 'As Serief', coords: [23.621861, 13.938444] },
+    { name: 'At Tawisha', coords: [26.598278, 12.482944] },
+    { name: 'At Tina', coords: [23.087639, 15.120472] },
+    { name: 'Dar As Salam', coords: [25.327111, 13.200444] },
+    { name: 'Kebkabiya', coords: [24.209722, 13.58825] },
+    { name: 'Kelemando', coords: [25.902361, 13.141278] },
+    { name: 'Kernoi', coords: [23.504694, 14.996194] },
+    { name: 'Kutum', coords: [24.671917, 14.204056] },
+    { name: 'Melit', coords: [26.146389, 14.30825] },
+    { name: 'Saraf Omra', coords: [23.296917, 13.584306] },
+    { name: 'Tawila', coords: [24.875222, 13.3125] },
+    { name: 'Um Baru', coords: [24.20775, 15.178611] },
+    { name: 'Um Kadadah', coords: [26.880222, 13.450472] },
+    { name: 'AR Rahad', coords: [30.643972, 12.721861] },
+    { name: 'Bara', coords: [30.367917, 13.694778] },
+    { name: 'Gebrat Al Sheikh', coords: [30.866667, 15.360722] },
+    { name: 'Gharb Bara', coords: [29.687389, 13.85975] },
+    { name: 'Sheikan', coords: [30.10475, 13.055917] },
+    { name: 'Soudari', coords: [28.473722, 15.419778] },
+    { name: 'Um Dam Haj Ahmed', coords: [30.814444, 13.700778] },
+    { name: 'Um Rawaba', coords: [31.35125, 13.093583] },
+    { name: 'Ad Dabbah', coords: [30.94725, 18.05075] },
+    { name: 'Al Burgaig', coords: [30.639889, 19.583944] },
+    { name: 'Al Golid', coords: [28.981778, 17.798333] },
+    { name: 'Delgo', coords: [30.565389, 20.122167] },
+    { name: 'Dongola', coords: [30.465806, 19.153444] },
+    { name: 'Halfa', coords: [28.467861, 21.2255] },
+    { name: 'Merwoe', coords: [31.944722, 18.223528] },
+    { name: 'Agig', coords: [38.266694, 18.175556] },
+    { name: 'Al Ganab', coords: [35.230944, 19.598861] },
+    { name: 'Dordieb', coords: [35.905583, 17.552917] },
+    { name: 'Hala\'ib', coords: [36.561111, 21.5615] },
+    { name: 'Haya', coords: [36.384972, 18.332361] },
+    { name: 'Jubayt Elma\'aadin', coords: [34.889917, 21.106083] },
+    { name: 'Port Sudan', coords: [37.204333, 19.604556] },
+    { name: 'Sawakin', coords: [37.333611, 19.099778] },
+    { name: 'Sinkat', coords: [36.836056, 18.840056] },
+    { name: 'Tawkar', coords: [37.727667, 18.424917] },
+    { name: 'Abu Hamad', coords: [33.322917, 19.534] },
+    { name: 'Ad Damar', coords: [34.304833, 17.183167] },
+    { name: 'Al Buhaira', coords: [32.636694, 19.604361] },
+    { name: 'Al Matama', coords: [32.722139, 16.684667] },
+    { name: 'Atbara', coords: [34.005778, 17.694028] },
+    { name: 'Barbar', coords: [33.993194, 18.026556] },
+    { name: 'Shendi', coords: [33.445556, 16.680056] },
+    { name: 'Abu Hujar', coords: [33.892806, 12.610528] },
+    { name: 'Ad Dali', coords: [33.386111, 12.508083] },
+    { name: 'Ad Dinder', coords: [34.742583, 12.781139] },
+    { name: 'As Suki', coords: [34.142528, 12.946139] },
+    { name: 'Sennar', coords: [33.931972, 12.956861] },
+    { name: 'Sharg Sennar', coords: [33.839944, 13.759806] },
+    { name: 'Sinja', coords: [33.773083, 13.130389] },
+    { name: 'Al Radoum', coords: [24.355361, 10.144861] },
+    { name: 'Al Wihda', coords: [24.990778, 12.860167] },
+    { name: 'As Salam - SD', coords: [24.831806, 11.591056] },
+    { name: 'As Sunta', coords: [25.568917, 10.658944] },
+    { name: 'Beliel', coords: [25.124167, 11.952389] },
+    { name: 'Buram', coords: [25.159806, 10.853111] },
+    { name: 'Damso', coords: [24.485083, 10.7455] },
+    { name: 'Ed Al Fursan', coords: [24.353611, 11.642028] },
+    { name: 'Gereida', coords: [25.144528, 11.275278] },
+    { name: 'Kas', coords: [24.184361, 12.464861] },
+    { name: 'Kateila', coords: [24.283833, 11.018611] },
+    { name: 'Kubum', coords: [23.901556, 11.746333] },
+    { name: 'Mershing', coords: [24.987861, 12.567389] },
+    { name: 'Nitega', coords: [25.272611, 12.584806] },
+    { name: 'Nyala Janoub', coords: [24.846639, 12.0215] },
+    { name: 'Nyala Shimal', coords: [24.71125, 12.396639] },
+    { name: 'Rehaid Albirdi', coords: [23.515583, 10.984861] },
+    { name: 'Sharg Aj Jabal', coords: [24.502056, 12.872944] },
+    { name: 'Shattaya', coords: [23.854056, 12.241778] },
+    { name: 'Tulus', coords: [24.885556, 11.117556] },
+    { name: 'Um Dafoug', coords: [23.751667, 10.547833] },
+    { name: 'Abassiya', coords: [31.298556, 12.330472] },
+    { name: 'Abu Jubayhah', coords: [31.702361, 11.19225] },
+    { name: 'Abu Kershola', coords: [30.791083, 12.145333] },
+    { name: 'Al Leri', coords: [30.875861, 10.130917] },
+    { name: 'Al Quoz', coords: [29.914556, 12.462556] },
+    { name: 'Ar Rashad', coords: [31.091056, 11.779833] },
+    { name: 'Ar Reif Ash Shargi', coords: [29.885194, 11.213278] },
+    { name: 'At Tadamon - SK', coords: [31.656111, 12.034972] },
+    { name: 'Delami', coords: [30.35025, 11.620028] },
+    { name: 'Dilling', coords: [29.652583, 12.046] },
+    { name: 'Ghadeer', coords: [31.070278, 10.693083] },
+    { name: 'Habila - SK', coords: [30.045611, 11.965361] },
+    { name: 'Kadugli', coords: [29.715139, 11.005417] },
+    { name: 'Talawdi', coords: [30.381028, 10.632] },
+    { name: 'Ag Geneina', coords: [22.373167, 13.336667] },
+    { name: 'Beida', coords: [22.026, 12.911333] },
+    { name: 'Foro Baranga', coords: [22.582889, 12.228722] },
+    { name: 'Habila - WD', coords: [22.467861, 12.755139] },
+    { name: 'Jebel Moon', coords: [22.9003, 14.0415] },
+    { name: 'Kereneik', coords: [22.7944, 13.3121] },
+    { name: 'Kulbus', coords: [22.6855, 14.4936] },
+    { name: 'Sirba', coords: [22.4645, 13.8279] },
+    { name: 'Abu Zabad', coords: [29.2332, 12.3532] },
+    { name: 'Abyei', coords: [27.6608, 10.8253] },
+    { name: 'Al Dibab', coords: [28.6939, 10.3653] },
+    { name: 'Al Idia', coords: [27.7944, 11.9183] },
+    { name: 'Al Khiwai', coords: [29.0183, 13.2923] },
+    { name: 'Al Lagowa', coords: [28.9978, 11.3677] },
+    { name: 'Al Meiram', coords: [27.6691, 10.2597] },
+    { name: 'An Nuhud', coords: [28.4287, 12.6897] },
+    { name: 'As Salam - WK', coords: [28.2044, 11.2588] },
+    { name: 'As Sunut', coords: [28.9220, 11.9985] },
+    { name: 'Babanusa', coords: [27.8069, 11.3243] },
+    { name: 'Ghubaish', coords: [27.5314, 12.2729] },
+    { name: 'Keilak', coords: [29.3668, 10.8236] },
+    { name: 'Wad Bandah', coords: [27.9446, 13.0920] },
+    { name: 'Ad Diwaim', coords: [32.0038, 13.9754] },
+    { name: 'Aj Jabalain', coords: [32.9411, 12.7031] },
+    { name: 'Al Gitaina', coords: [32.2985, 14.3549] },
+    { name: 'As Salam / Ar Rawat', coords: [32.2757, 12.4195] },
+    { name: 'Guli', coords: [32.4078, 13.2756] },
+    { name: 'Kosti', coords: [32.6721, 12.9129] },
+    { name: 'Rabak', coords: [32.7438, 13.1829] },
+    { name: 'Tendalti', coords: [32.0491, 12.9391] },
+    { name: 'Um Rimta', coords: [31.9507, 14.5763] }
+];
+
+const locations = [
+    { name: 'Aj Jazirah', coords: [33.3144, 14.6511] },
+    { name: 'East Darfur', coords: [26.3494, 11.0000] },
+    { name: 'West Darfur', coords: [22.6461, 13.7303] },
+    { name: 'West Kordofan', coords: [28.3169, 11.8788] },
+    { name: 'Gedaref', coords: [35.3894, 14.0344] },
+    { name: 'Central Darfur', coords: [23.3994, 12.4500] },
+    { name: 'Kassala', coords: [36.0797, 16.6323] },
+    { name: 'Blue Nile', coords: [34.2000, 11.0000] },
+    { name: 'Red Sea', coords: [37.2667, 19.6144] },
+    { name: 'River Nile', coords: [33.0231, 17.1991] },
+    { name: 'Sennar', coords: [33.8519, 13.0022] },
+    { name: 'Khartoum', coords: [32.8514, 15.7972] },
+    { name: 'North Darfur', coords: [25.3897, 16.3123] },
+    { name: 'South Kordofan', coords: [30.5597, 11.2772] },
+    { name: 'White Nile', coords: [32.4531, 13.0114] },
+    { name: 'Northern', coords: [29.4350, 20.4928] },
+    { name: 'North Kordofan', coords: [29.5350, 14.5928] },
+    { name: 'South Darfur', coords: [24.5000, 11.3000] }
+];
+
+const regionNames = {
+    "SDN.1_1": "Aj Jazirah",
+    "SDN.5_1": "East Darfur",
+    "SDN.16_1": "West Darfur",
+    "SDN.17_1": "West Kordofan",
+    "SDN.2_1": "Gedaref",
+    "SDN.4_1": "Central Darfur",
+    "SDN.6_1": "Kassala",
+    "SDN.3_1": "Blue Nile",
+    "SDN.11_1": "Red Sea",
+    "SDN.12_1": "River Nile",
+    "SDN.13_1": "Sennar",
+    "SDN.7_1": "Khartoum",
+    "SDN.8_1": "North Darfur",
+    "SDN.15_1": "South Kordofan",
+    "SDN.18_1": "White Nile",
+    "SDN.10_1": "Northern",
+    "SDN.9_1": "North Kordofan",
+    "SDN.14_1": "South Darfur"
+};
+
+const stateViewLayers = ['sudan-layer', 'state-borders', 'country-border'];
+const detailViewLayers = ['detail-fill', 'detail-border'];
+const detailViewSources = ['detail-source'];
+const SHEET_NAMES = {
+    STATE_VIEW: "MASTER LIST (ADMIN1)",
+    DETAIL_VIEW: "MASTER LIST (ADMIN2)"
+};
+
+const layerConfigs = {
+    'sudan-layer': {
+        id: 'sudan-layer',
+        type: 'fill',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        paint: {
+            'fill-color': '#FFFFFF',
+            'fill-opacity': 0.4
+        }
+    },
+    'state-borders': {
+        id: 'state-borders',
+        type: 'line',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        paint: {
+            'line-color': '#444',
+            'line-width': 0.5,
+            'line-opacity': 0.8
+        }
+    },
+    'country-border': {  // 新增country-border配置
+        id: 'country-border',
+        type: 'line',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        paint: {
+            'line-color': '#000',
+            'line-width': 0.5,
+            'line-opacity': 0.9
+        }
+    }
+};
+const parseCustomDate = (inputStr) => {
+    // 增强正则表达式匹配能力
+    const dateRegex = /\b(\d{1,2})[-/](\d{1,2}|[A-Za-z]{3})[-/](\d{4})\b/i;
+    const match = inputStr.match(dateRegex);
+    
+    if (!match) return new Date(NaN);
+
+    // 解析日期组件
+    let day = parseInt(match[1]);
+    const monthInput = match[2];
+    const year = parseInt(match[3]);
+
+    // 处理月份
+    let month;
+    if (/^\d+$/.test(monthInput)) {
+        month = parseInt(monthInput) - 1;
+    } else {
+        const monthName = monthInput.substring(0,3).toLowerCase();
+        month = new Date(`${monthName} 1, ${year}`).getMonth();
+    }
+
+    return new Date(year, month, day);
+};
+const chartCache = new Map();
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+
+let migrationData = {};
+let currentAnimations = [];
+let currentLayers = [];
+let currentBalls = [];
+let originNames = [];
+let currentMarkers = [];
+let markersVisible = true;
+let inflowData = {};  // 新增迁入数据存储
+let currentMode = 'origin'; // 当前显示模式：outflow/inflow
+let currentAdminLevel = 'state'; // state/detail
+let initialLoad = true; // 新增初始化标志
+let populationChart = null;
+let currentselectMode = 'calendar'; // 默认启用calendar模式
+let currentViewMode = 'calendar'; 
+
+const map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/wanghaoran6231/cm85rln4d006r01r05l29b3o7',
+    center: [30.456933, 15.668632],
+    zoom: 4.5,
+});
+
+
+
+
+function initializeMap(){
+    map.addSource('sudan-tileset', {
+        type: 'vector',
+        url: 'mapbox://wanghaoran6231.9rp5vw3j'
+    });
+
+    map.addLayer({
+        id: 'sudan-layer',
+        type: 'fill',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        paint: {
+            'fill-color': '#FFFFFF',
+            'fill-opacity': 0.4
+        }
+    });
+
+    map.addLayer({
+        id: 'state-borders',
+        type: 'line',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        layout: {  // 移到 layout 中
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+            'line-color': '#444',
+            'line-width': 0.5,
+            'line-opacity': 0.8,
+        }
+    });
+
+    map.addLayer({
+        id: 'country-border',
+        type: 'line',
+        source: 'sudan-tileset',
+        'source-layer': 'gadm41_SDN_1-c1lw97',
+        paint: {
+            'line-color': '#000',
+            'line-width': 0.5,
+            'line-opacity': 0.9
+        }
+    });
+
+    // 初始化Canvas
+    arrowCanvas = document.getElementById('arrow-canvas');
+    if (!arrowCanvas) {
+        arrowCanvas = document.createElement('canvas');
+        arrowCanvas.id = 'arrow-canvas';
+        document.getElementById('map-container').appendChild(arrowCanvas);
+    }
+    arrowCtx = arrowCanvas.getContext('2d');
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    requestAnimationFrame(drawArrows);
+
+    map.on('click', 'sudan-layer', handleRegionClick);
+    map.on('mousemove', (e) => {
+        const mousePoint = turf.point([e.lngLat.lng, e.lngLat.lat]);
+        let closestDistance = Infinity;
+        let closestMeta = null;
+
+        // 遍历所有当前箭头层
+        currentLayers.forEach(layerId => {
+            const meta = layerMetaMap.get(layerId);
+            if (!meta) return;
+
+            // 转换为Turf线段
+            const lineString = turf.lineString(meta.points);
+            
+            // 计算鼠标到线段的距离
+            const distance = turf.pointToLineDistance(mousePoint, lineString);
+            const startPoint = turf.point(meta.points[0]);
+            const endPoint = turf.point(meta.points[meta.points.length - 1]);
+            
+            // 检查起点/终点附近的悬停
+            const startDist = turf.distance(mousePoint, startPoint) * 1000; // 转换为米
+            const endDist = turf.distance(mousePoint, endPoint) * 1000;
+
+            // 判断悬停条件：在线宽范围内或在起点/终点附近
+            const lineWidthPixels = meta.lineWidth;
+            const threshold = (lineWidthPixels / 2) * 1.0; // 经验值调整
+            const nodeThreshold = 1.0; // 约10米
+
+            if (distance < threshold || startDist < nodeThreshold || endDist < nodeThreshold) {
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestMeta = meta;
+                }
+            }
+        });
+
+        // 更新弹出框
+        if (closestMeta) {
+            const [originLng, originLat] = closestMeta.points[0];
+            const [destLng, destLat] = closestMeta.points[closestMeta.points.length - 1];
+
+            if (!hoverPopup) {
+                hoverPopup = new mapboxgl.Popup({
+                    closeButton: false,
+                    closeOnClick: false,
+                    className: 'hover-popup'
+                });
+            }
+            const origin = closestMeta.originName || '未知起点';
+            const destination = closestMeta.destinationName || '未知终点';
+
+            hoverPopup
+                .setLngLat(e.lngLat)
+                .setHTML(`
+                    <div class="popup-content">
+                <h4>Migration route information</h4>
+                <p>Starting point：<strong>${origin}</strong></p>
+                <p>Ending point：<strong>${destination}</strong></p>
+                <p>Migration population：<strong>${closestMeta.count.toLocaleString()}</strong></p>
+                </div>
+                `)
+                .addTo(map);
+        } else {
+            if (hoverPopup) {
+                hoverPopup.remove();
+                hoverPopup = null;
+            }
+        }
+    });
+
+    // 新增：鼠标移出地图时移除弹出框
+    map.on('mouseout', () => {
+        if (hoverPopup) {
+            hoverPopup.remove();
+            hoverPopup = null;
+        }
+    });
+    clickHandler = e => handleRegionClick(e);
+    map.on('click', 'sudan-layer', clickHandler);
+    map.on('moveend', updateCanvasPosition);
+    addStateLabels();
+}
+
+function addStateLabels() {
+    locations.forEach(location => {
+        const marker = new mapboxgl.Marker({element: createLabelElement(location.name)})
+            .setLngLat(location.coords)
+            .addTo(map);
+        locationMarkers.push(marker);
+    });
+}
+
+function createLabelElement(name) {
+    const div = document.createElement("div");
+    div.className = "state-label";
+    div.textContent = name;
+    return div;
+}
+
+
+function handleDataSelection() {
+    // 关闭所有可能打开的下拉菜单
+    closeAllDropdowns();
+    
+    if (currentViewMode === 'calendar') {
+        toggleFileSelection(); // 调用原有日历选择功能
+    } else {
+        generateTimelineView(); // 生成时间轴视图
+    }
+}
+
+function toggleTimeline() {
+    isExpanded = !isExpanded;
+    const timelineContainer = document.getElementById('timelineContainer');
+    timelineContainer.style.display = isExpanded ? 'block' : 'none';
+    
+    if (isExpanded) {
+        generateTimeline();
+    }
+}
+
+function toggleCalendarModeDropdown() {
+    const dropdown = document.getElementById('calendarModeDropdown');
+    const currentDisplay = dropdown.style.display;
+    
+    // 关闭其他可能打开的下拉
+    document.querySelectorAll('.custom-dropdown').forEach(d => {
+        if (d !== dropdown) d.style.display = 'none';
+    });
+    
+    // 设置下拉框的位置，使其在按钮正下方
+    const button = document.querySelector('.right-part');
+    const rect = button.getBoundingClientRect();
+    dropdown.style.position = 'absolute';
+    dropdown.style.top = `${rect.bottom + window.scrollY}px`;
+    dropdown.style.left = `${rect.left + window.scrollX}px`;
+    dropdown.style.zIndex = '1000'; // 确保在最前层
+    
+    dropdown.style.display = currentDisplay === 'block' ? 'none' : 'block';
+}
+
+function selectCalendarMode(mode) {
+    const modeDropdown = document.getElementById('calendarModeDropdown');
+    if (!modeDropdown) {
+        console.error('找不到下拉菜单元素');
+        return;
+    }
+
+    currentViewMode = mode;
+    modeDropdown.style.display = 'none';
+    
+    // 确保其他元素存在
+    const modeDisplay = document.querySelector('.left-part');
+    if (modeDisplay) {
+        modeDisplay.textContent = `${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
+    }
+
+    // 添加容错处理
+    try {
+        document.getElementById('timelineContainer').style.display = 'none';
+        document.getElementById('calendarContainer').style.display = 'none';
+    } catch (e) {
+        console.warn('视图容器元素不存在:', e.message);
+    }
+}
+
+function closeAllDropdowns() {
+    // 关闭所有自定义下拉菜单
+    document.querySelectorAll('.custom-dropdown').forEach(dropdown => {
+        dropdown.style.display = 'none';
+    });
+
+    // 关闭浏览器原生下拉菜单（如果有）
+    const selects = document.querySelectorAll('select');
+    selects.forEach(select => {
+        select.blur(); // 移除焦点
+    });
+    
+    // 关闭其他可能存在的弹出层
+    document.getElementById('calendarModeDropdown').style.display = 'none';
+}
+
+function toggleDataSelection() {
+    if (currentMode === 'calendar') {
+        toggleFileSelection();
+    } else {
+        
+        toggleTimeline();
+    }
+}
+
+async function toggleTimeline() {
+    isExpanded = !isExpanded;
+    const timelineContainer = document.getElementById('timelineContainer');
+    timelineContainer.style.display = isExpanded ? 'block' : 'none';
+    
+    if (isExpanded) {
+        generateTimeline();
+    }
+}
+
+async function generateTimelineView() {
+    const container = document.getElementById('timelineContainer');
+    const timelineDiv = document.getElementById('timeline');
+
+    if (map) {
+        map.style.height = 'calc(100vh - 200px)';
+    }
+    // 确保容器和元素存在
+    if (!container || !timelineDiv) {
+        console.error('Timeline container or element not found');
+        return;
+    }
+
+    // 切换显示状态前先显示容器
+    container.style.display = 'block';
+    
+    // 如果已展开则关闭
+    if (isExpanded) {
+        container.style.display = 'none';
+        isExpanded = false;
+        return;
+    }
+
+    // 显示加载状态
+    timelineDiv.innerHTML = '<div class="loading">Loading timeline...</div>';
+    isExpanded = true;
+
+    // 生成时间轴内容
+    await generateTimeline(); 
+
+    // 添加动画效果
+    container.style.border = '2px solid #2196F3';
+    setTimeout(() => {
+        container.style.borderColor = 'transparent';
+    }, 1000);
+}
+async function preloadPopulationData() {
+    const promises = Array.from(fileMap.values()).map(async (fileInfo) => {
+        if (typeof fileInfo.population === 'undefined') {
+            try {
+                fileInfo.population = await fetchTotalPopulation(fileInfo.url);
+            } catch (error) {
+                console.error(`Failed to load population for ${fileInfo.url}:`, error);
+                fileInfo.population = 0; // 设置默认值
+            }
+        }
+    });
+    await Promise.all(promises);
+}
+
+function calculateGlobalMaxPopulation() {
+    let globalMax = 0;
+    Array.from(fileMap.values()).forEach(file => {
+        const pop = Number(file.population);
+        if (!isNaN(pop) && pop > globalMax) {
+            globalMax = pop;
+        }
+    });
+    return globalMax || 1; // 防止除以0
+}
+
+async function generateTimeline() {
+    await preloadPopulationData(); // 先等待数据加载
+    const globalMaxPopulation = calculateGlobalMaxPopulation();
+
+    const timelineContainer = document.getElementById('timeline');
+    timelineContainer.innerHTML = '';
+
+    // 创建文档片段提升性能
+    const fragment = document.createDocumentFragment();
+    const now = new Date();
+
+    // 步骤1: 收集有数据的年份和月份
+    const yearMonthMap = new Map();
+    
+    // 遍历所有数据日期
+    Array.from(fileMap.keys()).forEach(dateStr => {
+        try {
+            const dateObj = parseCustomDate(dateStr);
+            const year = dateObj.getFullYear();
+            const month = dateObj.getMonth() + 1; // 1-12
+            
+            if (!yearMonthMap.has(year)) {
+                yearMonthMap.set(year, new Set());
+            }
+            yearMonthMap.get(year).add(month);
+        } catch (e) {
+            console.error('日期解析错误:', dateStr, e);
+        }
+    });
+
+    // 按年份排序
+    const sortedYears = Array.from(yearMonthMap.keys()).sort((a, b) => a - b);
+
+    // 计算最大人口数量
+    let maxPopulation = 0;
+    Array.from(fileMap.values()).forEach(fileInfo => {
+        if (fileInfo.population > maxPopulation) {
+            maxPopulation = fileInfo.population;
+        }
+    });
+
+    // 生成年份分隔线容器
+    const yearSeparatorContainer = document.createElement('div');
+    yearSeparatorContainer.className = 'year-separators';
+
+    // 定义标签尺寸参数
+    const MIN_TAG_WIDTH = 30;
+    const MAX_TAG_WIDTH = 100;
+
+    sortedYears.forEach((year, yearIndex) => {
+        // 步骤3: 创建月份容器
+        const monthContainer = document.createElement('div');
+        monthContainer.className = 'timeline-months';
+
+        // 获取该年份的月份并排序
+        const months = Array.from(yearMonthMap.get(year)).sort((a, b) => a - b);
+
+        
+        months.forEach(month => {
+            // 步骤4: 创建月份条目
+            const monthDiv = document.createElement('div');
+            monthDiv.className = 'timeline-month';
+            monthDiv.dataset.yearMonth = `${year}-${month.toString().padStart(2, '0')}`;
+            Object.assign(monthDiv.style, {
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                margin: '8px 0',
+                 minHeight: '32px',
+                position: 'relative',
+                opacity: year > now.getFullYear() || 
+            (year === now.getFullYear() && month > now.getMonth() + 1) ? 0.5 : 1
+            });
+
+            // 步骤5: 创建月份标签（年份 + 英文缩写）
+            const monthLabel = document.createElement('div');
+            monthLabel.className = 'month-label';
+            Object.assign(monthLabel.style, {
+                fontWeight: '600',
+                color: year === now.getFullYear() && month === now.getMonth() + 1 ? 
+                      '#2196F3' : '#666',
+                minWidth: '85px',
+                fontSize: '0.95em',
+                letterSpacing: '0.05em',
+                transition: 'color 0.2s',
+                cursor: 'help'
+            });
+            monthLabel.title = `数据月份: ${year}-${month.toString().padStart(2, '0')}`;
+            monthLabel.textContent = `${year} ${MONTH_ABBR[month - 1]}`;
+
+            // 数据容器（添加滚动支持）
+            const dataContainer = document.createElement('div');
+            dataContainer.className = 'data-container';
+            Object.assign(dataContainer.style, {
+                display: 'flex',
+                gap: '8px',
+                flexWrap: 'wrap',
+                flexGrow: '1',
+                minHeight: '28px',
+                padding: '4px 0',
+                position: 'relative',
+                overflowX: 'auto',
+                scrollbarWidth: 'thin'
+            });
+
+            // 加载指示器（添加动画）
+            const loadingIndicator = document.createElement('div');
+            loadingIndicator.className = 'loading-indicator';
+            Object.assign(loadingIndicator.style, {
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                color: '#999',
+                fontSize: '0.9em',
+                display: 'flex',
+                gap: '2px'
+            });
+            loadingIndicator.innerHTML = `
+                <div class="loading-dots">
+                    <span style="animation: dotPulse 1.4s infinite">·</span>
+                    <span style="animation: dotPulse 1.4s 0.2s infinite">·</span>
+                    <span style="animation: dotPulse 1.4s 0.4s infinite">·</span>
+                </div>
+            `;
+            dataContainer.appendChild(loadingIndicator);
+            
+            // 异步加载数据（添加缓存机制）
+            (async () => {
+                try {
+                    // 筛选匹配日期
+                    const matchedDates = Array.from(fileMap.entries())
+                        .filter(([dateStr]) => {
+                            try {
+                                const dateObj = parseCustomDate(dateStr);
+                                return dateObj.getFullYear() === year && 
+                                       dateObj.getMonth() + 1 === month;
+                            } catch {
+                                return false;
+                            }
+                        })
+                        .sort(([a], [b]) => 
+                            parseCustomDate(a).getTime() - parseCustomDate(b).getTime()
+                        );
+
+                    // 移除加载指示器
+                    if (dataContainer.contains(loadingIndicator)) {
+                        dataContainer.removeChild(loadingIndicator);
+                    }
+
+                    // 批量创建标签（添加数据校验）
+                    const tagContainers = await Promise.all(
+                        matchedDates.map(async ([dateStr, fileInfo]) => {
+                            try {
+                                // 检查数据缓存
+                                if (!fileInfo.population) {
+                                    fileInfo.population = await fetchTotalPopulation(fileInfo.url);
+                                }
+                                
+                                if (isNaN(fileInfo.population) || fileInfo.population <= 0) {
+                                    throw new Error('无效的人口数据');
+                                }
+
+                                // 创建标签容器
+                                const tagContainer = document.createElement('div');
+                                tagContainer.className = 'tag-container';
+                                Object.assign(tagContainer.style, {
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    position: 'relative',
+                                    margin: '2px',
+                                    flexShrink: '0'
+                                });
+
+                                // 创建人口标签
+                                const popTag = document.createElement('button');
+                                popTag.className = 'population-tag';
+                                popTag.setAttribute('role', 'button');
+                                popTag.tabIndex = 0;
+
+                                // 计算动态宽度
+                                let validPopulations = [];
+                                Array.from(fileMap.values()).forEach(fileInfo => {
+                                const pop = Number(fileInfo.population);
+                                if (!isNaN(pop) && pop > 0) validPopulations.push(pop);
+                                });
+                                const maxPopulation = validPopulations.length > 0 ? 
+                                Math.max(...validPopulations) : 1;
+                                const validMax = maxPopulation || 1;
+                                const widthPercentage = (fileInfo.population / validMax) * 100;
+                                const dynamicWidth = MIN_TAG_WIDTH + (MAX_TAG_WIDTH - MIN_TAG_WIDTH) * (fileInfo.population / globalMaxPopulation);
+
+
+                                // 设置标签样式
+                                Object.assign(popTag.style, {
+                                    backgroundColor: '#2196F3',
+                                    color: 'white',
+                                    padding: '6px 0',
+                                    borderRadius: '16px',
+                                    fontSize: '0.9em',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                    border: 'none',
+                                    outline: 'none',
+                                    whiteSpace: 'nowrap',
+                                    fontFamily: 'monospace',
+                                    width: `${dynamicWidth}px`,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    textAlign: 'center',      // 居中显示
+                                    display: 'inline-block'
+                                });
+
+                                const formatPopulation = (num) => {
+                                if (num >= 1000) {
+                                    return `${(num / 1000).toFixed(1)}k`;
+                                } else if (num >= 1000) {
+                                    return `${Math.round(num / 1000)}k`;
+                                } else {
+                                    return num.toLocaleString();
+                                    }
+                                };
+
+                                // 设置标签内容
+                                popTag.innerHTML = `
+                                <div class="compact-display">
+                                ${formatPopulation(fileInfo.population)}
+                                </div>
+                                `;
+
+                                popTag.dataset.date = dateStr;
+                                popTag.dataset.url = fileInfo.url;
+
+                                // 添加焦点样式
+                                popTag.addEventListener('focus', () => {
+                                    popTag.style.outline = '2px solid #2196F3';
+                                });
+                                popTag.addEventListener('blur', () => {
+                                    popTag.style.outline = 'none';
+                                });
+
+                                // 组装元素
+                                tagContainer.appendChild(popTag);
+                                return tagContainer;
+                            } catch (error) {
+                                console.error(`加载标签失败: ${dateStr}`, error);
+                                return null;
+                            }
+                        })
+                    );
+
+                    // 过滤并添加有效标签
+                    const validContainers = tagContainers.filter(c => c !== null);
+                    if (validContainers.length > 0) {
+                        const tagsFragment = document.createDocumentFragment();
+                        validContainers.forEach(container => {
+                            tagsFragment.appendChild(container);
+                        });
+                        dataContainer.appendChild(tagsFragment);
+                    } else {
+                        // 无数据提示
+                        const emptyState = document.createElement('div');
+                        emptyState.className = 'empty-state';
+                        Object.assign(emptyState.style, {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            color: '#999',
+                            fontStyle: 'italic',
+                            fontSize: '0.9em'
+                        });
+                        emptyState.textContent = '暂无数据';
+                        dataContainer.appendChild(emptyState);
+                    }
+
+                } catch (error) {
+                    console.error(`加载月份 ${year}-${month} 失败:`, error);
+                    dataContainer.innerHTML = `
+                        <div class="error-state" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            color: #ff4444;
+                            font-size: 0.9em;
+                        ">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span>数据加载失败</span>
+                        </div>
+                    `;
+                }
+            })();
+
+            // 组装月份容器
+            monthDiv.appendChild(monthLabel);
+            monthDiv.appendChild(dataContainer);
+            monthContainer.appendChild(monthDiv);
+        });
+
+        fragment.appendChild(monthContainer);
+
+        
+    });
+
+    // 添加年份分隔线
+    fragment.appendChild(yearSeparatorContainer);
+    timelineContainer.appendChild(fragment);
+
+    // 全局点击事件处理
+    timelineContainer.addEventListener('click', async (e) => {
+        const tag = e.target.closest('.population-tag');
+        if (!tag) return;
+
+        const dateStr = tag.dataset.date;
+        const fileInfo = fileMap.get(dateStr);
+        if (!fileInfo) {
+            showNoDataPopup();
+            return;
+        }
+
+        const originalBgColor = tag.style.backgroundColor;
+        const originalTransform = tag.style.transform;
+
+        tag.style.opacity = '0.7';
+        tag.style.pointerEvents = 'none';
+        tag.style.backgroundColor = '#1565C0';
+
+        try {
+            await loadAndVisualize(fileInfo.url, dateStr);
+            
+            document.querySelectorAll('.population-tag.active').forEach(t => {
+                t.classList.remove('active');
+                t.style.transform = '';
+                t.style.boxShadow = '';
+            });
+            
+            tag.classList.add('active');
+            tag.style.boxShadow = '0 4px 12px rgba(33,150,243,0.3)';
+            tag.style.transform = 'translateY(-2px) scale(1.05)';
+            
+            if (typeof updateStateView === 'function') updateStateView();
+            if (typeof updateDetailView === 'function') updateDetailView();
+        } catch (error) {
+            console.error('加载失败:', error);
+            tag.style.backgroundColor = '#ff4444';
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        } finally {
+            tag.style.opacity = '1';
+            tag.style.pointerEvents = 'auto';
+            tag.style.backgroundColor = originalBgColor;
+            if (!tag.classList.contains('active')) {
+                tag.style.transform = originalTransform;
+            }
+        }
+    });
+
+    // 空状态处理
+    if (timelineContainer.children.length === 0) {
+        const emptyContainer = document.createElement('div');
+        emptyContainer.className = 'empty-timeline';
+        Object.assign(emptyContainer.style, {
+            textAlign: 'center',
+            padding: '40px 20px',
+            color: '#999',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px'
+        });
+        emptyContainer.innerHTML = `
+            <div style="
+                width: 80px;
+                height: 80px;
+                background: #f5f5f5;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 32px;
+            ">📅</div>
+            <div>
+                <h3 style="margin: 0 0 8px; font-weight: 500">未找到时间轴数据</h3>
+                <p style="margin: 0; color: #666">请检查数据源或尝试重新加载</p>
+            </div>
+            <button style="
+                background: #2196F3;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 20px;
+                cursor: pointer;
+                transition: opacity 0.2s;
+            " onclick="location.reload()">
+                重新加载数据
+            </button>
+        `;
+        timelineContainer.appendChild(emptyContainer);
+    }
+
+    // 添加样式动画
+    const styleTag = document.createElement('style');
+    styleTag.textContent = `
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes dotPulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+        .population-tag {
+            transition: width 0.3s ease-in-out;
+        }
+    `;
+    timelineContainer.appendChild(styleTag);
+}
+// 辅助函数
+function formatDisplayDate(dateStr) {
+    const date = parseCustomDate(dateStr);
+    return isNaN(date) ? dateStr : 
+        `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+async function fetchData(date) {
+    console.log(`Fetching data for ${date}`);
+    if (!fileMap.has(date)) {
+        console.warn(`No data available for ${date}`);
+        return;
+    }
+
+    const fileInfo = fileMap.get(date);
+    try {
+        const response = await fetch(fileInfo.url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch data for ${date}`);
+        }
+        const data = await response.json();
+        console.log(`Data for ${date}:`, data);
+        // 这里可以添加数据处理和展示逻辑
+    } catch (error) {
+        console.error(`Error fetching data for ${date}:`, error);
+    }
+}
+
+function adjustTimelineSpacing() {
+    const timelineMonths = document.querySelectorAll('.timeline-month');
+    timelineMonths.forEach(month => {
+        const events = month.querySelectorAll('.timeline-event');
+        const baseSpacing = 20; // 默认间隔
+        const spacing = events.length > 0 ? Math.max(baseSpacing, 100 / events.length) : baseSpacing;
+        month.style.marginBottom = `${spacing}px`;
+    });
+}
+
+function initTimelineScroll() {
+    const timelineContainer = document.getElementById('timelineContainer');
+    const timeline = document.getElementById('timeline');
+
+    if (!timelineContainer || !timeline) {
+        console.warn('时间轴容器未找到，滚动初始化失败');
+        return;
+    }
+
+    // 自动滚动到最后一个含有事件的月份中的最后一个事件
+    const monthDivs = timeline.querySelectorAll('.timeline-month');
+    let lastEvent = null;
+    for (let i = monthDivs.length - 1; i >= 0; i--) {
+        const events = monthDivs[i].querySelectorAll('.timeline-event');
+        if (events.length > 0) {
+            lastEvent = events[events.length - 1];
+            break;
+        }
+    }
+    if (lastEvent) {
+        timelineContainer.scrollTo({
+            left: lastEvent.offsetLeft - 100,
+            behavior: 'smooth'
+        });
+    }
+
+    // 添加横向滚动支持
+    let isDragging = false;
+    let startX;
+    let scrollLeft;
+
+    timelineContainer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.pageX - timelineContainer.offsetLeft;
+        scrollLeft = timelineContainer.scrollLeft;
+    });
+
+    timelineContainer.addEventListener('mouseleave', () => {
+        isDragging = false;
+    });
+
+    timelineContainer.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
+    timelineContainer.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - timelineContainer.offsetLeft;
+        const walk = (x - startX) * 2;
+        timelineContainer.scrollLeft = scrollLeft - walk;
+    });
+}
+
+function setupTimelineTooltips() {
+    // 将选择器修改为 .migration-label，以匹配生成的蓝色标签
+    const labels = document.querySelectorAll('.migration-label');
+    
+    labels.forEach(label => {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'timeline-tooltip';
+        
+        label.addEventListener('mouseenter', () => {
+            // 从 .population-value 中获取人口数据
+            const population = label.querySelector('.population-value')?.textContent || '未知';
+            // 从父级 .timeline-event 获取保存的日期
+            const event = label.closest('.timeline-event');
+            const date = event?.dataset.date || '未知日期';
+
+            tooltip.innerHTML = `
+                <div class="tooltip-header">
+                    ${new Date(date).toLocaleDateString()}
+                </div>
+                <div class="tooltip-content">
+                    总人口：${population}
+                </div>
+            `;
+            
+            document.body.appendChild(tooltip);
+            
+            const rect = label.getBoundingClientRect();
+            tooltip.style.position = 'absolute';
+            tooltip.style.left = `${rect.left + rect.width/2}px`;
+            tooltip.style.top = `${rect.top - 50}px`;
+            tooltip.style.opacity = '1';
+        });
+
+        label.addEventListener('mouseleave', () => {
+            tooltip.remove();
+        });
+    });
+}
+
+
+function createTimelineEvent(date, fileInfo) {
+    const eventDiv = document.createElement('div');
+    eventDiv.className = 'timeline-event';
+    // 将日期存入 data 属性，便于 tooltip 调用
+    eventDiv.dataset.date = date;
+    
+    // 可选：如果需要 marker，可以创建
+    const marker = document.createElement('div');
+    marker.className = 'marker';
+    eventDiv.appendChild(marker);
+    
+    // 日期标签
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = date;
+    eventDiv.appendChild(timeSpan);
+    
+    // 创建蓝色标签（统一使用 .migration-label）
+    const label = document.createElement('div');
+    label.className = 'migration-label';
+    fetchTotalPopulation(fileInfo.url)
+        .then(total => {
+            label.innerHTML = `<span class="population-value">${total.toLocaleString()} 人</span>`;
+            label.onclick = () => {
+                fetchData(date);
+                highlightSelectedEvent(eventDiv);
+            };
+        })
+        .catch(() => {
+            label.innerHTML = `<span class="population-value">N/A</span>`;
+            label.style.backgroundColor = '#cccccc';
+        });
+    eventDiv.appendChild(label);
+    return eventDiv;
+}
+
+// 高亮选中事件
+function highlightSelectedEvent(selectedDiv) {
+    document.querySelectorAll('.event').forEach(div => {
+        div.style.backgroundColor = '';
+        div.style.transform = '';
+    });
+    selectedDiv.style.backgroundColor = '#f0f8ff';
+    selectedDiv.style.transform = 'scale(1.05)';
+}
+
+// 添加图表提示
+function addChartTooltip(element, url) {
+    element.addEventListener('mouseenter', async () => {
+        const popup = document.createElement('div');
+        popup.className = 'chart-tooltip';
+        
+        // 加载微图表
+        const canvas = document.createElement('canvas');
+        popup.appendChild(canvas);
+        element.appendChild(popup);
+        
+        try {
+            const data = await prepareChartData([{ url, dateLabel: element.parentElement.querySelector('span').textContent }]);
+            renderMiniChart(canvas, data);
+        } catch (e) {
+            popup.innerHTML = '无法加载数据';
+        }
+    });
+    
+    element.addEventListener('mouseleave', () => {
+        const tooltip = element.querySelector('.chart-tooltip');
+        if (tooltip) tooltip.remove();
+    });
+}
+
+// 时间轴滚动处理
+function handleTimelineScroll(e) {
+    const timeline = e.target;
+    const events = timeline.getElementsByClassName('event');
+    
+    // 实现视差滚动效果
+    Array.from(events).forEach(event => {
+        const rect = event.getBoundingClientRect();
+        const speed = 0.3;
+        event.style.transform = `translateY(${timeline.scrollTop * speed}px)`;
+    });
+}
+
+// 切换时间轴尺寸
+function toggleTimelineSize() {
+    const container = document.getElementById('timelineContainer');
+    isExpanded = !isExpanded;
+    
+    if (isExpanded) {
+        container.style.height = '80vh';
+        container.style.width = '90%';
+    } else {
+        container.style.height = '200px';
+        container.style.width = '60%';
+    }
+}
+
+function toggleDataSelection() {
+    if (currentselectMode === 'calendar') {
+        // 原有日历逻辑
+        toggleFileSelection();
+    } else {
+        
+    if (!container) return;
+
+    // 自动计算位置
+    const buttonRect = document.querySelector('.left-part').getBoundingClientRect();
+    container.style.top = `${buttonRect.bottom + window.scrollY + 8}px`;
+    container.style.left = `${buttonRect.left + window.scrollX}px`;
+    
+    // 切换显示状态
+    container.style.display = container.style.display === 'block' ? 'none' : 'block';
+    
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+        if (!container.contains(e.target) && !e.target.closest('.split-button')) {
+            container.style.display = 'none';
+        }
+    }, { once: true });
+    }
+}
+
+async function generateInteractiveTimeline() {
+    const timelineDiv = document.getElementById('timeline');
+    timelineDiv.innerHTML = '<div class="loading-timeline">Loading timeline...</div>';
+
+    try {
+        const response = await fetch('/api/timeline-data');
+        const events = await response.json();
+        
+        timelineDiv.innerHTML = ''; // 清空加载提示
+        
+        events.forEach(event => {
+            const eventElement = document.createElement('div');
+            eventElement.className = `timeline-event ${event.type}`;
+            eventElement.innerHTML = `
+                <div class="event-date">${event.date}</div>
+                <div class="event-content">${event.description}</div>
+                <div class="event-marker"></div>
+            `;
+            
+            // 添加点击事件
+            eventElement.addEventListener('click', () => {
+                handleTimelineClick(event);
+                highlightSelectedEvent(eventElement);
+            });
+            
+            timelineDiv.appendChild(eventElement);
+        });
+    } catch (error) {
+        timelineDiv.innerHTML = '<div class="error">Failed to load timeline</div>';
+    }
+}
+
+function handleTimelineClick(event) {
+    // 执行与选择日期相关的操作
+    console.log('Selected timeline event:', event);
+    loadSelectedFile(event.filePath, event.date);
+    
+    // 关闭时间轴容器
+    document.getElementById('timelineContainer').style.display = 'none';
+}
+
+function highlightSelectedEvent(element) {
+    // 移除所有现有高亮
+    document.querySelectorAll('.timeline-event').forEach(el => {
+        el.classList.remove('selected');
+    });
+    // 添加新选择高亮
+    element.classList.add('selected');
+}
+async function toggleFileSelection() {
+    const dropdownMenu = document.getElementById('dropdownContainer');
+    const selectButton = document.getElementById('selectDataButton');
+    
+    if (fileMap.size === 0 && !window.dataLoaded) {
+        document.getElementById('loading').style.display = 'block';
+        await fetchAndProcessXlsx();  
+        window.dataLoaded = true;
+        document.getElementById('loading').style.display = 'none';
+
+        // 保留自动选择第一个文件的逻辑 ---------------------
+        if (fileMap.size > 0) {
+            const firstEntry = fileMap.entries().next().value;
+            const [firstDate, firstFileInfo] = firstEntry;
+            
+            // 更新按钮文本并加载数据
+            selectButton.textContent = firstDate;
+            await loadSelectedFile(firstFileInfo.url, firstDate);
+            
+            // 生成默认地区曲线
+            selectedRegion = { name: 'North Kordofan', mode: 'origin' };
+            visualizeCurrentFile();
+        }
+        // ----------------------------------------------
+    }
+
+    if (!fileSelectionVisible) {
+        const dataHierarchy = buildDataHierarchy();
+        renderYearDropdown(dataHierarchy, dropdownMenu);
+    }
+    
+    fileSelectionVisible = !fileSelectionVisible;
+    dropdownMenu.style.display = fileSelectionVisible ? 'block' : 'none';
+}
+
+
+function buildDataHierarchy() {
+    const hierarchy = {};
+    
+    fileMap.forEach((fileInfo, dateLabel) => {
+        const dateParts = dateLabel.split('-');
+        const year = dateParts[2];
+        const month = dateParts[1];
+        
+        if (!hierarchy[year]) hierarchy[year] = {};
+        if (!hierarchy[year][month]) hierarchy[year][month] = [];
+        hierarchy[year][month].push({
+            dateLabel,
+            url: fileInfo.url
+        });
+    });
+    
+    return hierarchy;
+}
+
+// 渲染年份下拉
+function renderYearDropdown(hierarchy, container) {
+    container.innerHTML = '';
+    const yearMenu = document.createElement('div');
+    yearMenu.className = 'year-dropdown';
+    
+    Object.keys(hierarchy)
+        .sort((a, b) => b - a) // 降序排列
+        .forEach(year => {
+            const yearItem = document.createElement('div');
+            yearItem.className = 'year-item';
+            yearItem.textContent = year;
+            yearItem.addEventListener('click', (event) => {
+    event.stopPropagation(); // 阻止事件冒泡
+    renderMonthGrid(year, hierarchy[year], container);
+});
+            yearMenu.appendChild(yearItem);
+        });
+       
+    container.appendChild(yearMenu);
+}
+
+// 渲染月份网格
+function renderMonthGrid(year, monthsData, container) {
+    const monthGrid = document.createElement('div');
+    monthGrid.className = 'month-grid';
+    
+    for (let month = 1; month <= 12; month++) {
+        const monthKey = new Date(year, month - 1).toLocaleString('en-US', { month: 'short' });
+        const monthData = monthsData[monthKey];
+        const monthItem = document.createElement('div');
+        
+        monthItem.className = `month-item ${monthData ? 'has-data' : 'no-data'}`;
+        monthItem.textContent = `${monthKey}`;
+        
+        if (monthData) {
+            monthItem.addEventListener('click', (e) => {
+        e.stopPropagation(); // 阻止事件冒泡
+
+    // 关闭已存在的子菜单
+        closeDateSubmenu();
+    
+      if (monthData.length > 1) {
+        showDateSubmenu(e.target, monthData);
+        } else {
+        selectDate(monthData[0]);
+       }
+     });
+    }
+    
+        monthGrid.appendChild(monthItem);
+    }
+    container.innerHTML = '';
+    container.appendChild(monthGrid);
+}
+// 显示日期子菜单
+async function showDateSubmenu(target, dates) {
+    closeDateSubmenu();
+    
+    const submenu = document.createElement('div');
+    submenu.className = 'date-submenu';
+    
+    // 排序日期
+    const sortedDates = dates.sort((a, b) => {
+        const aDate = extractDateFromString(a.dateLabel).dateObj;
+        const bDate = extractDateFromString(b.dateLabel).dateObj;
+        return aDate - bDate;
+    });
+
+    // 预加载数据
+    const dataPromises = sortedDates.map(async dateInfo => {
+        try {
+            const total = await fetchTotalPopulation(dateInfo.url);
+            return { ...dateInfo, total };
+        } catch (e) {
+            return { ...dateInfo, total: null };
+        }
+    });
+
+    const datesWithData = await Promise.all(dataPromises);
+
+    // 创建日期项
+    datesWithData.forEach(dateInfo => {
+        const dateItem = document.createElement('div');
+        dateItem.className = 'date-item';
+        
+        // 日期文本
+        const dateText = document.createElement('div');
+        dateText.className = 'date-text';
+        dateText.textContent = dateInfo.dateLabel.split('-')[0];
+        dateText.addEventListener('click', () => selectDate(dateInfo));
+        
+        // 图表容器
+        const chartContainer = document.createElement('div');
+        chartContainer.className = 'mini-chart-container';
+        
+        // 添加加载状态
+        const loading = document.createElement('div');
+        loading.className = 'chart-loading';
+        loading.innerHTML = '⌛';
+        chartContainer.appendChild(loading);
+        
+        dateItem.appendChild(dateText);
+        dateItem.appendChild(chartContainer);
+        submenu.appendChild(dateItem);
+
+        // 延迟渲染图表
+        setTimeout(async () => {
+            try {
+                const chartData = await prepareChartData(datesWithData);
+                renderMiniChart(chartContainer, chartData, dateInfo.dateLabel);
+                loading.remove();
+            } catch (e) {
+                loading.innerHTML = '❌ 数据不可用';
+            }
+        }, 0);
+    });
+    
+    submenu.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('click', globalClickHandler);
+    
+    // 保存当前子菜单引用
+    currentSubmenu = submenu;
+
+    const rect = target.getBoundingClientRect();
+    submenu.style.position = 'fixed';
+    submenu.style.left = `${rect.right + 5}px`;
+    submenu.style.top = `${rect.top}px`;
+    
+    document.body.appendChild(submenu);
+}
+
+async function fetchTotalPopulation(url) {
+    if (chartCache.has(url) && chartCache.get(url) !== null) {
+        return chartCache.get(url);
+    }
+
+    console.log("开始获取数据:", url);
+    let total = 0;
+    let validCount = 0;
+
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const worksheet = workbook.Sheets['MASTER LIST (ADMIN1)'];
+
+        if (!worksheet) {
+            throw new Error('找不到指定工作表');
+        }
+
+        for (let row = 4; row <= 21; row++) { // 5-22行
+            const cellAddress = XLSX.utils.encode_cell({ c: 2, r: row });
+            const cell = worksheet[cellAddress];
+
+            console.log(`检查单元格: ${cellAddress}, 值:`, cell ? cell.v : '空');
+
+            if (cell) {
+                const value = parseFloat(cell.v);
+                if (!isNaN(value)) {
+                    total += value;
+                    validCount++;
+                }
+            }
+        }
+
+        console.log("最终计算 total:", total, "validCount:", validCount);
+
+        const result = validCount > 0 ? total : 0;  // 避免存 null
+        chartCache.set(url, result);
+        return result;
+
+    } catch (e) {
+        console.error('数据获取失败:', e);
+        throw e;
+    }
+}
+
+// 准备图表数据
+function prepareChartData(datesWithData) {
+    return datesWithData
+        .filter(d => d.total !== null)
+        .sort((a, b) => {
+            const aDate = extractDateFromString(a.dateLabel).dateObj;
+            const bDate = extractDateFromString(b.dateLabel).dateObj;
+            return aDate - bDate;
+        })
+        .map(d => ({
+            date: d.dateLabel,
+            value: d.total,
+            x: d.dateLabel.split('-')[0], // 显示日期部分
+            y: d.total
+        }));
+}
+
+// 渲染迷你图表
+function renderMiniChart(container, data, currentDate) {
+    if (container._chart) {
+        container._chart.destroy();
+    }
+    const canvas = document.createElement('canvas');
+    container.innerHTML = '';
+    container.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    // 高亮当前日期
+    const currentIndex = data.findIndex(d => d.date === currentDate);
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => d.x),
+            datasets: [{
+                data: data.map(d => d.y),
+                borderColor: '#2196F3',
+                tension: 0.4,
+                pointBackgroundColor: data.map((d, i) => 
+                    i === currentIndex ? '#FF5722' : '#4CAF50'
+                )
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => `日期: ${items[0].label}`,
+                        label: (ctx) => `总人数: ${ctx.raw}`
+                    }
+                }
+            },
+            scales: {
+                y: { display: false },
+                x: {
+                    display: true,
+                    ticks: { 
+                        maxRotation: 0,
+                        font: { size: 8 }
+                    }
+                }
+            }
+        }
+    });
+
+    container.style.height = '60px';
+    container.style.width = '180px';
+    container.appendChild(canvas);
+    container._chart = chart;
+}
+
+function globalClickHandler(e) {
+    if (!e.target.closest('.date-submenu') && !e.target.closest('.month-item')) {
+        closeDateSubmenu();
+    }
+}
+
+// 增强的关闭函数
+function closeDateSubmenu() {
+    if (currentSubmenu) {
+        currentSubmenu.querySelectorAll('.mini-chart-container').forEach(container => {
+            if (container._chart) {
+                container._chart.destroy();
+                delete container._chart;
+            }
+        });
+        document.removeEventListener('click', globalClickHandler);
+        currentSubmenu.remove();
+        currentSubmenu = null;
+    }
+}
+
+
+// 选择日期后的处理
+async function selectDate(dateInfo) {
+
+    if (populationChart) {
+    populationChart.destroy();
+    populationChart = null;
+}
+
+    closeDateSubmenu();
+
+    const dropdownMenu = document.getElementById('dropdownContainer');
+    const selectButton = document.getElementById('selectDataButton');
+    
+    if (!selectButton) return;
+    selectButton.textContent = dateInfo.dateLabel;
+    dropdownMenu.style.display = 'none';
+    fileSelectionVisible = false;
+    
+    await loadSelectedFile(dateInfo.url, dateInfo.dateLabel);
+    selectedRegion = { name: 'North Kordofan', mode: 'origin' };
+    visualizeCurrentFile();
+
+    console.log("当前 fileMap:", fileMap);
+    console.log("当前选择的 dateInfo:", dateInfo);
+}
+
+// 辅助函数
+function monthToNumber(monthAbbr) {
+    return new Date(`${monthAbbr} 1, 2020`).getMonth();
+}
+
+// 修改后的日期处理函数
+function extractDateFromString(str) {
+    // 统一转换为DD-MMM-YYYY格式处理
+    const match = String(str).match(/(\d{1,2})-([A-Za-z]{3})-(\d{4})/i);
+    if (match) {
+        const day = parseInt(match[1]);
+        const monthAbbr = match[2].substring(0,3).toLowerCase();
+        const year = parseInt(match[3]);
+        
+        const month = new Date(`${monthAbbr} 1, 2020`).getMonth();
+        const dateObj = new Date(year, month, day);
+        
+        return {
+            valid: true,
+            day,
+            month: month + 1,
+            year,
+            dateObj
+        };
+    }
+    return { valid: false };
+}
+
+function updateCanvasPosition() {
+    const mapContainer = document.getElementById('map');
+    const rect = mapContainer.getBoundingClientRect();
+    arrowCanvas.style.left = rect.left + 'px';
+    arrowCanvas.style.top = rect.top + 'px';
+}
+
+
+function toggleViewMode() {
+    const dropdown = document.getElementById('modeDropdown');
+    const isVisible = dropdown.style.display === 'block';
+    
+    // 关闭其他下拉菜单
+   
+    
+    dropdown.style.display = isVisible ? 'none' : 'block';
+}
+
+function changeMode(mode) {
+    currentMode = mode;
+    const button = document.getElementById('modeSwitch');
+    
+    // 更新按钮显示
+    button.textContent = `CurrentMode：${mode === 'origin' ? 'origin' : 'displacemet'} `;
+    
+    // 关闭下拉菜单
+    document.getElementById('modeDropdown').style.display = 'none';
+    
+    // 更新可视化
+    selectedRegion = null;
+    clearPreviousVisuals();
+    
+    // 更新按钮颜色
+    button.style.backgroundColor = mode === 'origin' ? '#2196F3' : '#4CAF50';
+    
+    // 触发可视化更新
+    if (selectedRegion) {
+        visualizeCurrentFile();
+    }
+}
+
+// 点击页面其他区域关闭下拉菜单
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.custom-dropdown') && 
+        !event.target.matches('#modeSwitch')) {
+        document.getElementById('modeDropdown').style.display = 'none';
+    }
+});
+
+
+function toggleAdminLevel() {
+    const dropdown = document.getElementById('adminDropdown');
+    const isVisible = dropdown.style.display === 'block';
+    
+    // 关闭其他下拉菜单
+    
+    
+    dropdown.style.display = isVisible ? 'none' : 'block';
+}
+
+// 切换行政等级
+function changeAdminLevel(level) {
+    const button = document.getElementById('adminLevel');
+    const dropdown = document.getElementById('adminDropdown');
+    const modeSwitch = document.getElementById('modeSwitch');
+
+    if (currentAdminLevel === level) return;
+    
+    currentAdminLevel = level;
+    button.textContent = `Current level：${level === 'state' ? 'State' : 'Locality'} ▼`;
+    
+    // 新增地区级视图逻辑
+    if (level === 'detail') {
+        // 强制切换到迁入模式
+        currentMode = 'displacemet';
+        modeSwitch.textContent = 'CurrentMode：displacemet ';
+        modeSwitch.style.backgroundColor = '#9C27B0'; // 紫色表示特殊状态
+        modeSwitch.disabled = true; // 禁用模式切换按钮
+    } else {
+        // 恢复州级视图模式切换能力
+        modeSwitch.textContent = `CurrentMode：${currentMode === 'origin' ? 'oorigin' : 'displacemet'} `;
+        modeSwitch.style.backgroundColor = '#2196F3';
+        modeSwitch.disabled = false;
+    }
+
+    // 更新地图视图
+    level === 'state' ? showStateView() : showDetailView();
+    dropdown.style.display = 'none';
+    clearPreviousVisuals();
+}
+
+// 修改模式切换函数
+function changeMode(mode) {
+    // 地区级视图禁止切换模式
+    if (currentAdminLevel === 'detail') {
+        alert("Locality  only supports the inflow mode");
+        return;
+    }
+    
+    currentMode = mode;
+    const button = document.getElementById('modeSwitch');
+    button.textContent = `CurrentMode：${mode === 'origin' ? 'origin' : 'displacemet'} `;
+    button.style.backgroundColor = mode === 'origin' ? '#2196F3' : '#4CAF50';
+    document.getElementById('modeDropdown').style.display = 'none';
+    
+    selectedRegion = null;
+    clearPreviousVisuals();
+    if (selectedRegion) visualizeCurrentFile();
+}
+// 显示州级视图
+function showStateView() {
+    detailViewLayers.forEach(layerId => {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+    });
+    if (map.getSource('detail-source')) map.removeSource('detail-source');
+    // 添加州级图层
+    stateViewLayers.forEach(layerId => {
+        if (!map.getLayer(layerId)) {
+            map.addLayer(layerConfigs[layerId]);
+        }
+    });
+    
+    // 移除细节图层
+    if (map.getLayer('detail-fill')) map.removeLayer('detail-fill');
+    if (map.getLayer('detail-border')) map.removeLayer('detail-border');
+    if (map.getSource('detail-source')) map.removeSource('detail-source');
+    
+    // 恢复交互
+    if (!interactionEnabled) {
+        map.on('click', 'sudan-layer', clickHandler);
+        interactionEnabled = true;
+    }
+    
+    // 显示州级标签
+    locationMarkers.forEach(marker => marker.getElement().style.display = 'block');
+    if (!interactionEnabled) {
+        map.on('click', 'sudan-layer', clickHandler);
+        interactionEnabled = true;
+    }
+}
+function adjustTimelineWidth() {
+    const container = document.getElementById('timelineContainer');
+    if (!container) {
+        console.error("timelineContainer not found");
+        return;
+    }
+    container.style.width = 'fit-content';
+}
+function centerTimelineItem(eventDiv) {
+    const timelineContainer = document.getElementById('timelineContainer');
+    if (!timelineContainer) return;
+    timelineContainer.scrollTo({
+        left: eventDiv.offsetLeft - timelineContainer.offsetWidth / 2 + eventDiv.offsetWidth / 2,
+        behavior: 'smooth'
+    });
+}
+// 显示细节视图
+function showDetailView() {
+    stateViewLayers.forEach(layerId => {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+    });
+    // 添加细节图层
+    if (!map.getSource('detail-source')) {
+        map.addSource('detail-source', {
+            type: 'vector',
+            url: 'mapbox://wanghaoran6231.8w1a4h1z'
+        });
+        
+        map.addLayer({
+            id: 'detail-fill',
+            type: 'fill',
+            source: 'detail-source',
+            'source-layer': 'Locality_Poly_Mar2021-9inhcz',
+            paint: {'fill-color': '#FFFFFF', 'fill-opacity': 0.2}
+        });
+        
+        map.addLayer({
+            id: 'detail-border',
+            type: 'line',
+            source: 'detail-source',
+            'source-layer': 'Locality_Poly_Mar2021-9inhcz',
+            paint: {'line-color': '#000', 'line-width': 0.5}
+        });
+    }
+    
+    // 移除州级图层
+    stateViewLayers.forEach(layerId => {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+    });
+    
+    // 隐藏州级标签
+    locationMarkers.forEach(marker => marker.getElement().style.display = 'none');
+    
+    // 绑定细节点击事件
+    if (!detailClickHandler) {
+        detailClickHandler = e => {
+            const features = map.queryRenderedFeatures(e.point, {layers: ['detail-fill']});
+            if (features.length > 0) {
+                const hrpcode = features[0].properties.HRpcode;
+                const cityName = citycode[hrpcode] || '未知地区';
+                selectedDetailRegion = { hrpcode, name: cityName };
+                generateDetailMigration(hrpcode, cityName);
+            }
+        };
+        map.on('click', 'detail-fill', detailClickHandler);
+    }
+    
+    // 禁用州级交互
+    if (interactionEnabled) {
+        map.off('click', 'sudan-layer', clickHandler);
+        interactionEnabled = false;
+    }
+}
+
+
+function showNoDataPopup() {
+    document.getElementById('noDataPopup').style.display = 'block';
+}
+
+function hideNoDataPopup() {
+    document.getElementById('noDataPopup').style.display = 'none';
+}
+
+
+function resizeCanvas() {
+    const mapContainer = document.getElementById('map');
+    const rect = mapContainer.getBoundingClientRect();
+    arrowCanvas.width = rect.width;
+    arrowCanvas.height = rect.height;
+    arrowCanvas.style.width = rect.width + 'px';
+    arrowCanvas.style.height = rect.height + 'px';
+}
+
+function drawArrows() {
+    if (!arrowCtx) {
+        console.warn('Canvas context not initialized');
+        return;
+    }
+
+    arrowCtx.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
+    currentLayers.forEach(layerId => {
+        const meta = layerMetaMap.get(layerId);
+        if (meta) drawArrow(meta.points, meta.lineWidth, meta.color);
+    });
+    requestAnimationFrame(drawArrows);
+}
+
+function drawArrow(points, baseWidth, color = '#418FDE') {
+    if (points.length < 2) return;
+
+    const headLength = Math.max(12, baseWidth * 3);
+    const angle = Math.PI/5;
+    const startWidth = baseWidth * 2; // 起始宽度设为2倍基础宽度
+
+    // 转换所有点到屏幕坐标并计算总长度
+    const screenPoints = points.map(p => {
+        const projected = map.project(p);
+        return { x: projected.x, y: projected.y };
+    });
+
+    // 计算路径总长度
+    let totalLength = 0;
+    const segmentLengths = [];
+    for (let i = 0; i < screenPoints.length - 1; i++) {
+        const dx = screenPoints[i+1].x - screenPoints[i].x;
+        const dy = screenPoints[i+1].y - screenPoints[i].y;
+        const length = Math.sqrt(dx*dx + dy*dy);
+        segmentLengths.push(length);
+        totalLength += length;
+    }
+
+    // 计算渐变结束位置（总长度的1/3）
+    const gradientEnd = totalLength / 3;
+    let accumulated = 0;
+    let gradientIndex = 0;
+
+    // 找到渐变结束点的索引
+    while (gradientIndex < segmentLengths.length && accumulated < gradientEnd) {
+        accumulated += segmentLengths[gradientIndex];
+        gradientIndex++;
+    }
+
+    // 绘制渐变部分
+    let currentLength = 0;
+    for (let i = 0; i < gradientIndex; i++) {
+        const progress = Math.min(currentLength / gradientEnd, 1);
+        const width = startWidth - (startWidth - baseWidth) * progress;
+        
+        arrowCtx.beginPath();
+        arrowCtx.moveTo(screenPoints[i].x, screenPoints[i].y);
+        arrowCtx.lineTo(screenPoints[i+1].x, screenPoints[i+1].y);
+        arrowCtx.strokeStyle = color;
+        arrowCtx.lineWidth = width;
+        arrowCtx.lineCap = 'round';
+        arrowCtx.stroke();
+        
+        currentLength += segmentLengths[i];
+    }
+
+    // 绘制固定宽度部分
+    arrowCtx.beginPath();
+    arrowCtx.moveTo(screenPoints[gradientIndex].x, screenPoints[gradientIndex].y);
+    for (let i = gradientIndex + 1; i < screenPoints.length; i++) {
+        arrowCtx.lineTo(screenPoints[i].x, screenPoints[i].y);
+    }
+    arrowCtx.strokeStyle = color;
+    arrowCtx.lineWidth = baseWidth;
+    arrowCtx.lineCap = 'round';
+    arrowCtx.stroke();
+
+    // 绘制箭头头部（保持不变）
+    const endPoint = screenPoints[screenPoints.length-1];
+    const prevPoint = screenPoints[screenPoints.length-2];
+    const angleRad = Math.atan2(endPoint.y - prevPoint.y, endPoint.x - prevPoint.x);
+    
+    arrowCtx.fillStyle = color;
+    arrowCtx.beginPath();
+    arrowCtx.moveTo(endPoint.x, endPoint.y);
+    arrowCtx.lineTo(
+        endPoint.x - headLength * Math.cos(angleRad - angle),
+        endPoint.y - headLength * Math.sin(angleRad - angle)
+    );
+    arrowCtx.lineTo(
+        endPoint.x - headLength * Math.cos(angleRad + angle),
+        endPoint.y - headLength * Math.sin(angleRad + angle)
+    );
+    arrowCtx.closePath();
+    arrowCtx.fill();
+}
+
+function handleFiles() {
+    const files = document.getElementById('excelFile').files;
+    fileQueue = Array.from(files);
+    totalFiles = fileQueue.length;
+    currentFileIndex = 0;
+    updateFileList();
+    processNextFile(); 
+}
+
+
+function updateFileList() {
+    const list = document.getElementById('fileList');
+    list.innerHTML = fileQueue.map((file, index) => 
+        `<div data-index="${index}" style="padding: 5px; cursor: pointer; border: 1px solid #ddd; margin-bottom: 4px; ${index === currentFileIndex ? 'background: #e3f2fd;' : ''}">
+            ${index + 1}. ${file.name}
+        </div>`
+    ).join('');
+
+    // 初始化或更新 Sortable
+    if (!list.sortableInstance) {
+        list.sortableInstance = new Sortable(list, {
+            animation: 150,
+            onEnd: function (evt) {
+                // evt.oldIndex 为拖拽前的位置，evt.newIndex 为拖拽后的位置
+                if (evt.oldIndex === evt.newIndex) return;
+                // 更新 fileQueue 顺序
+                const movedItem = fileQueue.splice(evt.oldIndex, 1)[0];
+                fileQueue.splice(evt.newIndex, 0, movedItem);
+                
+                // 如果当前选中的文件被移动了，更新 currentFileIndex
+                if (currentFileIndex === evt.oldIndex) {
+                    currentFileIndex = evt.newIndex;
+                } else if (evt.oldIndex < currentFileIndex && evt.newIndex >= currentFileIndex) {
+                    currentFileIndex--; // 向后移动时调整索引
+                } else if (evt.oldIndex > currentFileIndex && evt.newIndex <= currentFileIndex) {
+                    currentFileIndex++; // 向前移动时调整索引
+                }
+                
+                updateFileList(); // 重新渲染列表，确保序号正确
+            }
+        });
+    }
+}
+
+function selectFile(index) {
+    currentFileIndex = index;
+    visualizeCurrentFile();
+    updateFileList();
+}
+
+function processNextFile() {
+    if (currentFileIndex >= fileQueue.length-1) {
+        updateProgress(100);
+    }
+
+    const file = fileQueue[currentFileIndex];
+    const reader = new FileReader();
+    
+    reader.onprogress = (e) => {
+    if (e.lengthComputable) {
+        const filePercent = (e.loaded / e.total * 95); // 单个文件占95%
+        const totalPercent = (currentFileIndex / fileQueue.length * 100) + (filePercent / fileQueue.length);
+        updateProgress(totalPercent);
+    }
+};
+
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            processExcelData(workbook);
+            fileDataCache[currentFileIndex] = workbook; // 缓存数据
+            const totalPercent = ((currentFileIndex + 1) / fileQueue.length * 100);
+            updateProgress(totalPercent);
+            currentFileIndex++;
+            
+            if (currentFileIndex < fileQueue.length) {
+                processNextFile();
+            }
+        } catch (error) {
+            console.error('文件处理失败:', error);
+            currentFileIndex++;
+            processNextFile();
+        }
+    };
+
+    reader.onerror = (error) => {
+        console.error('文件读取失败:', error);
+        currentFileIndex++;
+        processNextFile();
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+function updateProgress(percent) {
+    const progressBar = document.getElementById('progressBar');
+    progressBar.style.width = percent + '%';
+    progressBar.textContent = Math.min(percent, 100).toFixed(0) + '%';
+}
+
+function showNoDataPopup() {
+    const popup = document.getElementById('noDataPopup');
+    popup.style.display = 'block';
+
+    setTimeout(() => {
+        popup.style.display = 'none';
+    }, 1000); // 1秒后自动隐藏
+}
+
+function hideNoDataPopup() {
+    const popup = document.getElementById('noDataPopup');
+    popup.style.display = 'none';
+}
+
+function visualizeCurrentFile() {
+    if (!fileDataCache[currentFileIndex]) return;
+
+    // 处理当前文件数据
+    processExcelData(fileDataCache[currentFileIndex]);
+
+    // 清除之前的视觉效果
+    clearPreviousVisuals();
+
+    let hasData = true; // 用来判断当前文档是否有数据
+    let migrationInfo = {}; // 用于存储当前区域的迁移数据
+    let regionName = ""; // 存储当前区域名称
+
+    // 判断当前选择的是细节视图还是州级视图
+    if (detailLayerAdded && selectedDetailRegion) {
+        // 细节视图
+        const { hrpcode, name } = selectedDetailRegion;
+        regionName = name;
+
+        // 获取当前区域的迁移数据
+        const data = migrationDetailData[hrpcode];
+        if (!data || Object.values(data).every(v => v === 0)) {
+            hasData = false;
+        } else {
+            generateDetailMigration(hrpcode, name);
+            migrationInfo = data; // 存储数据用于绘制饼图
+        }
+    } else if (selectedRegion) {
+        // 州级视图
+        const { name, mode } = selectedRegion;
+        regionName = name;
+
+        if (mode === 'displacemet') {
+            // 检查该地区的迁入数据是否全为 0
+            const regionData = inflowData[name];
+            if (!regionData || Object.values(regionData).every(v => v === 0)) {
+                hasData = false;
+            } else {
+                generateInflowVisualization(name, '#FF4444');
+                migrationInfo = regionData; // 存储数据用于绘制饼图
+            }
+        } else {
+            // 迁出模式
+            const regionData = migrationData[name];
+            if (!regionData || Object.values(regionData).every(v => v === 0)) {
+                hasData = false;
+            } else {
+                generateMigrationVisualization(name);
+                migrationInfo = regionData; // 存储数据用于绘制饼图
+            }
+        }
+    } else {
+        // 默认展示示例区域
+        regionName = "Aj Jazirah";
+        if (currentMode === 'displacemet') {
+            const sampleData = inflowData[regionName];
+            if (!sampleData || Object.values(sampleData).every(v => v === 0)) {
+                hasData = false;
+            } else {
+                generateInflowVisualization(regionName, '#FF4444');
+                migrationInfo = sampleData;
+            }
+        } else {
+            const sampleData = migrationData[regionName];
+            if (!sampleData || Object.values(sampleData).every(v => v === 0)) {
+                hasData = false;
+            } else {
+                generateMigrationVisualization(regionName);
+                migrationInfo = sampleData;
+            }
+        }
+    }
+
+    // 如果没有数据则显示弹窗
+    if (!hasData) {
+        showNoDataPopup();
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+    } else {
+        hideNoDataPopup();
+        updateMigrationChart(regionName, migrationInfo);
+    }
+
+    // 更新其他界面状态
+    const status = document.getElementById('status');
+    status.textContent = `正在展示: ${fileQueue[currentFileIndex]?.name || '无文件'}`;
+}
+
+async function fetchAndProcessXlsx() {
+    try {
+        const apiUrl = 'https://api.github.com/repos/barbatoswang/SudanDatasTry/contents/';
+        const response = await fetch(apiUrl);
+        const files = await response.json();
+        const xlsxFiles = files.filter(file => file.name.endsWith('.xlsx'));
+        const fileArray = [];
+        const errors = [];
+        
+        await Promise.all(xlsxFiles.map(async file => {
+            try {
+                const workbook = await readXlsxFromUrl(file.download_url);
+                const masterSheet = workbook.Sheets['MASTER LIST (ADMIN1)'];
+                
+                if (!masterSheet) {
+                    throw new Error('缺少MASTER LIST工作表');
+                }
+                
+                // 增强日期提取逻辑
+                const dateCell = masterSheet['A1'] || { v: '' };
+                const dateResult = extractDateFromString(dateCell.v);
+                
+                if (!dateResult.valid) {
+                    throw new Error(`未找到有效日期: ${dateCell.v}`);
+                }
+                
+                // 转换为标准日期格式
+                const formattedDate = formatDateString(
+                    dateResult.day,
+                    dateResult.month,
+                    dateResult.year
+                );
+                
+                fileArray.push({
+                    dateStr: formattedDate,
+                    dateObj: dateResult.dateObj,
+                    url: file.download_url,
+                    filename: file.name
+                });
+            } catch (error) {
+                errors.push(`文件[${file.name}]处理失败: ${error.message}`);
+            }
+        }));
+        
+        if (errors.length > 0) {
+            console.warn('文件处理错误:', errors.join('\n'));
+        }
+        
+        // 过滤无效日期
+        const validFiles = fileArray.filter(f => f.dateStr);
+        validFiles.sort((a, b) => b.dateObj - a.dateObj);
+        
+        // 清空并重建fileMap
+        fileMap.clear();
+        validFiles.forEach(fileInfo => {
+            fileMap.set(fileInfo.dateStr, fileInfo);
+        });
+        const sortedFiles = Array.from(fileMap.values())
+            .sort((a, b) => b.dateObj - a.dateObj); // 降序排列，最新文件在前
+
+        if (autoProcessEnabled && sortedFiles.length > 0) {
+            const firstFile = sortedFiles[0];
+            await loadAndVisualize(firstFile.url, firstFile.dateStr);
+        }
+        
+    } catch (error) {
+        console.error('初始化失败:', error);
+        fileMap.clear();
+    }
+}
+
+async function loadAndVisualize(url, dateLabel) {
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // 处理数据
+        const { migrationData } = processExcelData(workbook);
+
+        const migrationInfo = migrationData['North Kordofan']; 
+        // 更新界面显示
+        document.getElementById("file-name-display").textContent = `CurrentDate: ${dateLabel}`;
+        
+        // 强制生成北科尔多凡的迁移曲线
+        currentMode = 'origin';
+        selectedRegion = { name: 'North Kordofan', mode: 'origin' };
+        generateMigrationVisualization('North Kordofan', '#418FDE');
+        // 自动定位到目标区域
+        const targetCoords = getStateCenter('North Kordofan');
+        if (targetCoords) {
+            map.flyTo({
+                center: targetCoords,
+                zoom: 4.5,
+                essential: true
+            });
+        }
+        if (migrationInfo && Object.keys(migrationInfo).length > 0) {
+            updateMigrationChart('North Kordofan', migrationInfo);
+        } else {
+            console.warn("North Kordofan 没有可用的迁移数据");
+        }
+
+    } catch (error) {
+        console.error('自动加载失败:', error);
+    }
+}
+
+        async function readXlsxFromUrl(url) {
+            let response = await fetch(url);
+            let arrayBuffer = await response.arrayBuffer();
+            let data = new Uint8Array(arrayBuffer);
+            let workbook = XLSX.read(data, { type: 'array' });
+            return workbook;
+        }
+
+        function showFileSelection() {
+            let dropdownMenu = document.getElementById('fileList');
+            dropdownMenu.innerHTML = ''; // 清空现有列表
+
+            fileMap.forEach((url, label) => {
+                let listItem = document.createElement('li');
+                listItem.textContent = label;
+                listItem.onclick = () => loadSelectedFile(url);
+                dropdownMenu.appendChild(listItem);
+            });
+
+            document.getElementById('dropdownContainer').style.display = 'block';
+        }
+
+        async function loadSelectedFile(url, displayName) {
+    try {
+        let response = await fetch(url);
+        let arrayBuffer = await response.arrayBuffer();
+        let data = new Uint8Array(arrayBuffer);
+        let workbook = XLSX.read(data, { type: 'array' });
+
+        processExcelData(workbook); // 处理数据
+        document.getElementById('dropdownContainer').style.display = 'none'; // 关闭下拉菜单
+
+        // **更新顶部栏，显示时间名称**
+        document.getElementById("file-name-display").textContent = `CurrentDate: ${displayName}`;
+        if (selectedRegion) {
+            clearPreviousVisuals();
+            visualizeCurrentFile();
+        }
+    } catch (error) {
+        console.error('Error loading the selected file:', error);
+    }
+}
+
+
+
+        document.addEventListener('DOMContentLoaded', fetchAndProcessXlsx);
+
+        function extractDateFromString(str) {
+    // 支持两种日期格式的正则表达式
+    const patterns = [
+        // 格式: DD-MM-YYYY (06-02-2024)
+        /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/,
+        // 格式: DD-MMM-YYYY (06-Feb-2024)
+        /\b(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{4})\b/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = String(str).match(pattern);
+        if (match) {
+            const day = parseInt(match[1]);
+            const monthInput = match[2];
+            const year = parseInt(match[3]);
+            
+            // 解析月份
+            let month;
+            if (/^\d+$/.test(monthInput)) {
+                month = parseInt(monthInput) - 1; // 月份转0-11
+            } else {
+                const monthName = monthInput.substring(0,3).toLowerCase();
+                month = new Date(`${monthName} 1, 2020`).getMonth(); 
+            }
+            
+            // 验证日期有效性
+            const tempDate = new Date(year, month, day);
+            if (isNaN(tempDate.getTime())) continue;
+            
+            return {
+                valid: true,
+                day,
+                month: month + 1,
+                year,
+                dateObj: tempDate
+            };
+        }
+    }
+    
+    return { valid: false };
+}
+
+function formatDateString(day, month, year) {
+    // 转换为标准格式 DD-MMM-YYYY
+    const date = new Date(year, month - 1, day);
+    const monthAbbr = date.toLocaleString('en-US', { month: 'short' });
+    return `${day.toString().padStart(2, '0')}-${monthAbbr}-${year}`;
+}
+
+function processExcelData(workbook) {
+    try {
+        const admin1SheetName = "MASTER LIST (ADMIN1)";
+        const admin2SheetName = "MASTER LIST (ADMIN2)";
+        
+        const sheetAdmin1 = workbook.Sheets[admin1SheetName];
+        if (!sheetAdmin1) throw new Error('找不到工作表: MASTER LIST (ADMIN1)');
+
+        originNames = [];
+        for (let col = 4; col <= 21; col++) {
+            const cell = sheetAdmin1[XLSX.utils.encode_cell({ r: 2, c: col })];
+            originNames.push(cell ? cell.v.toString().trim() : '');
+        }
+
+        const destinations = [];
+        for (let row = 4; row <= 21; row++) {
+            const cell = sheetAdmin1[XLSX.utils.encode_cell({ r: row, c: 0 })];
+            destinations.push(cell ? cell.v.toString().trim() : '');
+        }
+
+        migrationData = {};
+        originNames.forEach((origin, originIndex) => {
+            if (!origin) return;
+            migrationData[origin] = {};
+            const dataCol = 4 + originIndex;
+            destinations.forEach((dest, destIndex) => {
+                if (!dest) return;
+                const cell = sheetAdmin1[XLSX.utils.encode_cell({ r: 4 + destIndex, c: dataCol })];
+                migrationData[origin][dest] = cell ? Number(cell.v) || 0 : 0;
+            });
+        });
+
+        inflowData = {};
+        for (let row = 4; row <= 21; row++) {
+            const destCell = sheetAdmin1[XLSX.utils.encode_cell({ r: row, c: 0 })];
+            const destName = destCell ? destCell.v.toString().trim() : '';
+            inflowData[destName] = {};
+
+            for (let col = 4; col <= 21; col++) {
+                const originName = originNames[col - 4];
+                const cell = sheetAdmin1[XLSX.utils.encode_cell({ r: row, c: col })];
+                inflowData[destName][originName] = cell ? Number(cell.v) || 0 : 0;
+            }
+        }
+        
+        const sheetAdmin2 = workbook.Sheets[admin2SheetName];
+        if (!sheetAdmin2) return;
+
+        const detailRegions = [];
+        for (let col = 6; col <= 23; col++) {
+            const cell = sheetAdmin2[XLSX.utils.encode_cell({ r: 2, c: col })];
+            detailRegions.push(cell ? cell.v.toString().trim() : '');
+        }
+
+        migrationDetailData = {};
+        for (let row = 4; row <= 189; row++) {
+            const hrpcodeCell = sheetAdmin2[XLSX.utils.encode_cell({ r: row, c: 3 })];
+            if (!hrpcodeCell) continue;
+
+            const hrpcode = hrpcodeCell.v.toString().trim();
+            const migrationValues = {};
+
+            for (let col = 6; col <= 23; col++) {
+                const regionName = detailRegions[col - 6];
+                const cell = sheetAdmin2[XLSX.utils.encode_cell({ r: row, c: col })];
+                migrationValues[regionName] = cell ? Number(cell.v) || 0 : 0;
+            }
+
+            migrationDetailData[hrpcode] = migrationValues;
+        }
+    } catch (error) {
+        console.error('数据处理失败:', error);
+        throw error;
+    }
+    return { // 明确返回处理后的数据
+        migrationData,
+        inflowData,
+        migrationDetailData
+    };
+}
+
+function handleRegionClick(e) {
+    if (!interactionEnabled) return;
+
+    const feature = e.features[0];
+    const gid = feature.properties.GID_1;
+    const regionName = regionNames[gid];
+
+    selectedRegion = {
+        name: regionName,
+        mode: currentMode
+    };
+
+    // 立即更新可视化
+    visualizeCurrentFile();
+
+    // 处理迁移数据
+    let migrationInfo = {};
+    let hasData = false; // 是否有数据的标志
+    if (currentMode === 'origin') {
+        const matchedOrigin = originNames.find(name => name === regionName);
+        if (matchedOrigin && migrationData[matchedOrigin]) {
+            generateMigrationVisualization(matchedOrigin);
+            migrationInfo = migrationData[matchedOrigin]; // 迁出数据
+            hasData = true;
+        }
+    } else {
+        if (inflowData[regionName]) {
+            generateInflowVisualization(regionName, '#85CAC5');
+            migrationInfo = inflowData[regionName]; // 迁入数据
+            hasData = true;
+        }
+    }
+
+    // 处理并显示饼图
+    if (hasData) {
+        hideNoDataPopup();
+        updateMigrationChart(regionName, migrationInfo);
+        document.getElementById("migration-info").style.display = "block"; // 显示数据框
+    } else {
+        showNoDataPopup();
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+    }
+}
+
+function updateMigrationChart(regionName, data) {
+    if (!data || Object.keys(data).length === 0) {
+        document.getElementById("migration-info").style.display = "none";
+        return;
+    }
+
+    // 获取前三占比地区 + 其他
+    let sortedData = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    let top3 = sortedData.slice(0, 3);
+    let otherSum = sortedData.slice(3).reduce((sum, entry) => sum + entry[1], 0);
+
+    let labels = top3.map(d => d[0]);
+    let values = top3.map(d => d[1]);
+    if (otherSum > 0) {
+        labels.push("other");
+        values.push(otherSum);
+    }
+
+    const maxMigration = top3.length > 0 ? top3[0][1] : 0;
+
+    // 更新左下角信息框
+    document.getElementById("region-name").textContent = `${regionName}`;
+    document.getElementById("max-migration").textContent = `Maximum migrant population: ${maxMigration}`;
+
+    // 显示信息框
+    document.getElementById("migration-info").style.display = "block";
+
+    // 渲染饼图
+    renderPieChart(labels, values);
+}
+
+function generateDetailMigration(hrpcode, targetCity) {
+    currentMode = 'displacemet'; // 确保模式同步
+    clearPreviousVisuals();
+    
+    const migrationData = migrationDetailData[hrpcode];
+    if (!migrationData) {
+        console.warn(`无迁移数据 for HRpcode: ${hrpcode}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+        return;
+    }
+
+    let targetCoords;
+    if (targetCity === "AR Rahad") {
+        const hrpcodeMapping = {
+            "SD13030": [30.643972, 12.721861], // Gedaref州的AR Rahad
+            "SD12084": [34.775278, 13.246694]  // Aj Jazirah州的AR Rahad
+        };
+        targetCoords = hrpcodeMapping[hrpcode] || 
+            locations_city.find(c => c.name === targetCity)?.coords;
+    } else {
+        targetCoords = locations_city.find(c => c.name === targetCity)?.coords;
+    }
+
+    if (!targetCoords) {
+        console.warn(`目标城市坐标缺失: ${targetCity}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+        return;
+    }
+
+    // 筛选有效迁移数据并排序
+    const validMigrations = Object.entries(migrationData)
+        .filter(([_, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1]);
+
+    if (validMigrations.length === 0) {
+        console.warn(`没有有效的迁移数据 for ${targetCity}`);
+        document.getElementById("migration-info").style.display = "none"; // 隐藏数据框
+        return;
+    }
+
+    validMigrations.forEach(([originState, count]) => {
+        const originCoords = getStateCenter(originState);
+        if (!originCoords) {
+            console.warn(`州级坐标缺失: ${originState}`);
+            return;
+        }
+
+        // 生成箭头
+        const curvePoints = calculateStraightLine(originCoords, targetCoords);
+        const lineWidth = Math.max(3, Math.min(12, Math.log10(count) * 2));
+
+        const layerId = `state-flow-${originState}-to-${targetCity}`
+            .replace(/\s+/g, '_')
+            .toLowerCase();
+
+        layerMetaMap.set(layerId, {
+            points: curvePoints,
+            lineWidth: lineWidth,
+            count: count,
+            color: '#85CAC5',
+            dashArray: [0],
+            originName: originState,
+            destinationName: targetCity
+        });
+
+        currentLayers.push(layerId);
+        createBallAnimation(curvePoints, count, '#85CAC5', {
+            size: Math.max(8, Math.min(20, count / 5000)),
+            speed: Math.max(0.5, Math.min(2, 1 - (count / 100000)))
+        });
+        createPopulationMarker(originCoords, count, '#85CAC5');
+    });
+
+    // 生成数据框 & 饼图
+    updateMigrationChart(targetCity, migrationData);
+}
+
+function getStateCenter(stateName) {
+    const normalized = stateName.trim().toLowerCase();
+    const state = locations.find(l => 
+        l.name.toLowerCase() === normalized ||
+        l.name.replace(/\s+/g, '').toLowerCase() === normalized
+    );
+    return state ? [...state.coords] : [30.4569, 15.6686]; // 默认返回苏丹中部坐标
+}
+
+
+function generateMigrationVisualization(originName, color = '#418FDE') {
+    if (!originName || !migrationData[originName]) {
+        console.warn(`无效的迁出地区: ${originName}`);
+        return;
+    }
+
+    clearPreviousVisuals();
+    const origin = locations.find(l => l.name === originName);
+    if (!origin || !migrationData[originName]) return;
+
+    const validMigrations = Object.entries(migrationData[originName]).filter(([_, v]) => v > 0);
+    if (validMigrations.length === 0) return;
+
+    const values = validMigrations.map(([_, v]) => v);
+    const maxMigration = Math.max(...values);
+    const minMigration = Math.min(...values);
+
+    validMigrations.forEach(([destination, count]) => {
+        const target = locations.find(l => l.name === destination);
+        if (!target) return;
+
+        let curvePoints = originName === destination ? 
+        calculateSelfCurve(origin.coords) : 
+        calculateStraightLine(origin.coords, target.coords);
+        // 显式设置起点终点坐标
+        curvePoints[0] = [...origin.coords]; // ES6数组复制
+        curvePoints[curvePoints.length - 1] = [...target.coords];
+
+        const layerId = `migration-${originName}-${destination}`;
+        const lineWidth = Math.max(3, Math.min(8, 8 * (count - minMigration)/(maxMigration - minMigration)));
+        
+        layerMetaMap.set(layerId, {
+            points: curvePoints,
+            lineWidth: lineWidth,
+            count: count,
+            color: color,
+            originName: originName,       // 新增起点名称
+            destinationName: destination  // 新增终点名称
+        });
+
+        createBallAnimation(curvePoints, count, color);
+        setupPopup(layerId, originName, destination, count);
+        currentLayers.push(layerId);
+        createPopulationMarker(target.coords, count, color);
+    });
+}
+
+function createPopulationMarker(coords, count, color) {
+    // 动态计算圆球大小（基础大小12，最大40，基于对数比例）
+    const existingMarkers = currentMarkers.filter(marker => {
+        const markerCoords = marker.getLngLat();
+        return turf.distance(turf.point([markerCoords.lng, markerCoords.lat]), turf.point(coords)) < 0.1; // 10公里内视为重叠
+    });
+
+    // 如果存在重叠标记，合并数据
+    if (existingMarkers.length > 0) {
+        existingMarkers.forEach(marker => {
+            const existingCount = Number(marker.getElement().dataset.count) || 0;
+            marker.getElement().dataset.count = existingCount + count;
+            
+        });
+        return;
+    }
+
+    const rgbaColor = hexToRgba(color, 0.0001); // 设置70%不透明度
+    const baseSize = 1;
+    const maxSize = 40;
+    const size = Math.min(maxSize, baseSize + Math.log(count) * 3);
+
+    const container = document.createElement('div');
+    container.className = 'population-sphere';
+    container.style.width = `${size}px`;
+    container.style.height = `${size}px`;
+    container.style.background = color;
+    container.style.borderColor = rgbaColor; // 同步边框透明度
+    container.style.opacity = '0.01'; // 额外叠加透明度增强效果
+
+    // 添加悬停提示
+    container.setAttribute('title', `MigrationPopulation: ${count.toLocaleString()}`);
+
+    // 添加点击交互
+    container.addEventListener('click', (e) => {
+        e.stopPropagation();
+        new mapboxgl.Popup()
+            .setLngLat(coords)
+            .setHTML(`<strong>MigrationPopulation：</strong>${count.toLocaleString()}`)
+            .addTo(map);
+    });
+
+    const marker = new mapboxgl.Marker(container)
+        .setLngLat(coords)
+        .addTo(map);
+    currentMarkers.push(marker);
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16),
+          g = parseInt(hex.slice(3, 5), 16),
+          b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function calculateStraightLine(start, end) {
+    const offsetRatio = 0.01; // 终点回缩比例（3%的线段长度）
+    
+    // 计算方向向量
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    
+    // 计算实际终点（向起点方向回缩）
+    const adjustedEnd = [
+        end[0] - dx * offsetRatio,
+        end[1] - dy * offsetRatio
+    ];
+
+    // 生成插值点
+    const points = [];
+    const steps = 200;
+    for (let t = 0; t <= 1; t += 1/steps) {
+        const x = start[0] + (adjustedEnd[0] - start[0]) * t;
+        const y = start[1] + (adjustedEnd[1] - start[1]) * t;
+        points.push([x, y]);
+    }
+    points.push([adjustedEnd[0], adjustedEnd[1]]);  // ← 新增补偿点
+    return points;
+}
+function generateInflowVisualization(destinationName, color) {
+    clearPreviousVisuals();
+    const destination = locations.find(l => l.name === destinationName);
+    if (!destination || !inflowData[destinationName]) return;
+
+    const validMigrations = Object.entries(inflowData[destinationName])
+        .filter(([_, v]) => v > 0);
+    if (validMigrations.length === 0) return;
+
+    const values = validMigrations.map(([_, v]) => v);
+    const maxMigration = Math.max(...values);
+    const minMigration = Math.min(...values);
+
+    validMigrations.forEach(([origin, count]) => {
+        const source = locations.find(l => l.name === origin);
+        if (!source) return;
+
+        // 修改此处：将calculateBezierCurve改为calculateStraightLine
+        let curvePoints = origin === destinationName 
+            ? calculateSelfCurve(source.coords)
+            : calculateStraightLine(source.coords, destination.coords);
+
+        const layerId = `displacemet-${origin}-${destinationName}`;
+        const lineWidth = Math.max(3, Math.min(8, 8 * (count - minMigration)/(maxMigration - minMigration)));
+        
+        layerMetaMap.set(layerId, {
+            points: curvePoints,
+            lineWidth: lineWidth,
+            count: count,
+            color: color,
+            originName: origin,            // 迁出州名称
+        destinationName: destinationName // 迁入州名称
+        });
+
+        createBallAnimation(curvePoints, count, color);
+        setupPopup(layerId, origin, destinationName, count);
+        currentLayers.push(layerId);
+        createPopulationMarker(source.coords, count, color);
+    });
+}
+
+function createIconRow(icons) {
+    const row = document.createElement('div');
+    row.className = 'population-row';
+
+    icons.forEach(icon => {
+        const iconDiv = document.createElement('div');
+        iconDiv.className = `${icon.type}-icon`;
+        
+        if (icon.type === 'person') {
+            iconDiv.style.marginLeft = '-7px'; // 保持原有重叠样式
+            
+            if (icon.partial > 0) {
+                iconDiv.classList.add('partial-person');
+                iconDiv.style.setProperty('--partial-height', `${(1 - icon.partial) * 100}%`);
+            }
+        } else {
+            // 群体图标样式调整
+            iconDiv.style.marginLeft = '-5px';
+            iconDiv.style.zIndex = 1; // 确保群体图标在下层
+        }
+
+        row.appendChild(iconDiv);
+    });
+
+    return row;
+}
+
+
+function calculateSelfCurve(start) {
+    const radius = 0.6;
+    const startAngle = 180;
+    const endAngle = -110;
+    const steps = 110;
+    const [x0, y0] = start;
+    const points = [];
+    const initialOffsetX = radius * Math.cos(startAngle * Math.PI/180);
+    const initialOffsetY = radius * Math.sin(startAngle * Math.PI/180) * 0.6;
+
+    for (let i = 0; i <= steps; i++) {
+        const angle = startAngle + (endAngle - startAngle) * (i / steps);
+        const rad = angle * Math.PI / 180;
+        const offsetX = radius * Math.cos(rad) - initialOffsetX;
+        const offsetY = (radius * Math.sin(rad) * 0.6) - initialOffsetY;
+        points.push([x0 + offsetX, y0 + offsetY]);
+    }
+    return points;
+}
+
+function setupPopup(layerId, origin, destination, count) {
+    const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false });
+    map.on('mouseenter', layerId, e => {
+        popup.setLngLat(e.lngLat)
+            .setHTML(`<h3>${origin} → ${destination}</h3><p>MigrationPopulation：<b>${count.toLocaleString()}</b></p>`)
+            .addTo(map);
+    });
+    map.on('mouseleave', layerId, () => popup.remove());
+}
+
+function createBallAnimation(points, count, color = '#418FDE') {
+    const ball = document.createElement('div');
+    ball.className = 'ball';
+    ball.style.background = color;
+    ball.style.borderColor = color;
+    document.body.appendChild(ball);
+    currentBalls.push(ball);
+
+    const mapContainer = document.getElementById('map');
+    const speedFactor = Math.max(0.5, Math.min(2, 2 - (count / 50000)));
+    let t = 0;
+
+    const animate = () => {
+        if (t >= 1) t = 0;
+        const idx = Math.floor(t * (points.length - 1));
+        const [lng, lat] = points[idx];
+        const pos = map.project([lng, lat]);
+        const rect = mapContainer.getBoundingClientRect();
+        
+        // 添加边界检查
+        if (pos.x < 0 || pos.x > mapContainer.offsetWidth || 
+            pos.y < 0 || pos.y > mapContainer.offsetHeight) {
+            t += 0.001 * speedFactor;
+            requestAnimationFrame(animate);
+            return;
+        }
+
+        ball.style.left = `${pos.x + rect.left}px`;
+        ball.style.top = `${pos.y + rect.top}px`;
+        t += 0.001 * speedFactor;
+        currentAnimations.push(requestAnimationFrame(animate));
+    };
+    animate();
+}
+
+let migrationChart;
+function renderPieChart(labels, data) {
+    if (migrationChart) migrationChart.destroy();
+
+    const ctx = document.getElementById("migration-chart").getContext("2d");
+    const total = data.reduce((acc, val) => acc + val, 0); // 计算总数
+
+    migrationChart = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: ["#84ADEC", "#ADC9F2", "#CEDEF7", "#E6EFFB", "#8EC07C"]
+            }]
+        },
+        options: {
+            plugins: {
+                legend: {
+                    display: true, 
+                    position: 'top' // 修改图例位置为上方
+                },
+                tooltip: {
+                    enabled: true // 显示工具提示
+                },
+                datalabels: {
+                    color: "#000", // 文字颜色
+                    anchor: "end",
+                    align: "start",
+                    formatter: (value, context) => {
+                        let percentage = (value / total) * 100;
+                        let label = context.chart.data.labels[context.dataIndex];
+                        // 过滤掉 "Other" 和小于 20% 的部分
+                        if (label.toLowerCase() !== "other" && percentage >= 20) {
+                            return `${label}: (${percentage.toFixed(1)}%)`;
+                        }
+                        return "";
+                    }
+                }
+            }
+        },
+        plugins: [ChartDataLabels] // 确保启用了 Chart.js DataLabels 插件
+    });
+}
+
+
+function clearPreviousVisuals() {
+    // 停止所有动画
+    currentAnimations.forEach(cancelAnimationFrame);
+    currentAnimations = [];
+    
+    // 移除所有小球
+    currentBalls.forEach(ball => {
+        if (ball.parentNode) {
+            ball.parentNode.removeChild(ball);
+        }
+    });
+    currentBalls = [];
+    
+    // 清除所有图层元数据
+    layerMetaMap.clear();
+    currentLayers = [];
+    
+    // 移除所有地图标记
+    currentMarkers.forEach(marker => marker.remove());
+    currentMarkers = [];
+    
+    // 清除画布
+    arrowCtx.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
+}
+
+function cleanMapResources(layers, sources) {
+    layers.forEach(layerId => {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+    });
+    sources.forEach(sourceId => {
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+    });
+}
+
+function clearAllLayers() {
+  // 清除州视图图层
+  stateViewLayers.forEach(layerId => {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+  });
+  // 清除细节视图图层
+  detailViewLayers.forEach(layerId => {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+  });
+  // 同时移除细节视图对应的 source
+  if (map.getSource('detail-source')) {
+    map.removeSource('detail-source');
+  }
+}
+function calculateSphereSize(count) {
+  return Math.min(38, Math.max(12, Math.log(count) * 5));
+}
+function showTab(tabId) {
+    // 隐藏所有选项卡内容
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+    });
+    
+    // 移除所有按钮的激活状态
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // 显示选中的选项卡
+    const activeTab = document.getElementById(tabId + 'Tab');
+    if(activeTab) {
+        activeTab.style.display = 'block';
+        
+        // 特殊处理Data选项卡
+        if(tabId === 'data') {
+            const timelineContainer = document.getElementById('timelineContainer');
+            timelineContainer.style.display = 'block';
+            
+            // 仅首次加载时初始化时间轴
+            if(!timelineContainer.dataset.initialized) {
+                generateTimeline();
+                timelineContainer.dataset.initialized = true;
+            }
+        }
+    }
+
+    // 添加按钮激活状态
+   
+}
+function showTabAndSetMode(tabId) {
+    // 1. 执行原有选项卡切换
+    showTab(tabId);
+    
+    // 2. 自动切换到时间轴模式
+    if(tabId === 'data') {
+        selectCalendarMode('timeline');
+        generateTimeline(); // 可选：立即生成时间轴内容
+    }
+    
+    // 3. 更新按钮激活状态
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+}
+// 在初始化代码中设置默认选项卡
+document.addEventListener('DOMContentLoaded', () => {
+    showTab('data');  // 默认显示Data选项卡
+});
+// 初始化默认选项卡
+window.addEventListener('load', () => {
+    showTab('data');
+    document.getElementById('menu-bar').style.height = `${window.innerHeight}px`;
+});
+
+// 初始化图例交互
+document.querySelectorAll('.legend-sphere').forEach(sphere => {
+  sphere.addEventListener('mouseenter', function() {
+    const size = this.dataset.size;
+    const label = this.parentElement.nextElementSibling
+      .children[[...this.parentElement.children].indexOf(this)];
+    label.style.fontWeight = 'bold';
+    label.style.color = '#2196F3';
+  });
+  
+  sphere.addEventListener('mouseleave', function() {
+    const size = this.dataset.size;
+    const label = this.parentElement.nextElementSibling
+      .children[[...this.parentElement.children].indexOf(this)];
+    label.style.fontWeight = 'normal';
+    label.style.color = '#666';
+  });
+});
+
+
+document.addEventListener("click", (event) => {
+  const activeMenus = document.querySelectorAll(".custom-dropdown[style*='block']");
+  
+  activeMenus.forEach(menu => {
+    const triggerButton = document.querySelector(
+      `button[onclick*="${menu.id.replace('Dropdown', '')}"]`
+    );
+    
+    // 仅当点击不在菜单区域和触发按钮时关闭
+    
+  });
+});
+
+
+
+document.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('loading').style.display = 'block';
+    await fetchAndProcessXlsx();
+    window.dataLoaded = true;
+    document.getElementById('loading').style.display = 'none';
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+    const timelineContainer = document.getElementById("timeline-container");
+    const selectButton = document.getElementById("selectDataButton"); // 你的按钮 ID
+
+    function adjustTimelineWidth() {
+        if (selectButton) {
+            timelineContainer.style.width = `${selectButton.offsetWidth}px`;
+        }
+    }
+
+    // 监听窗口大小变化，确保宽度随之调整
+    window.addEventListener("resize", adjustTimelineWidth);
+    adjustTimelineWidth(); // 初始调整
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('loading').style.display = 'block';
+    await fetchAndProcessXlsx();
+    window.dataLoaded = true;
+    document.getElementById('loading').style.display = 'none';
+});
+
+window.onload = function() {
+    map.on('load', async () => {
+        initializeMap();
+        resizeCanvas();
+        
+        // 等待地图资源加载完成
+        await new Promise(resolve => map.once('idle', resolve));
+        
+        // 开始数据加载
+        document.getElementById('loading').style.display = 'block';
+        await fetchAndProcessXlsx();
+        document.getElementById('loading').style.display = 'none';
+        
+        requestAnimationFrame(drawArrows);
+    });
+};
+
+</script>
+<select id="dateDropdown" onchange="handleDropdownChange()">
+    <option value="">Select a date</option>
+</select>
+<div id="map-footer">
+    This map is for illustration purposed only.The boundaries and names shown and the designations used on this map do not imply official endorsement or acceptance by the  International Organization for Migration
+</div>
+</body>
+</html>
