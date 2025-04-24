@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sudan Crisis Monitor</title>
+    <style>
+        /* ========== 全局标题样式 ========== */
+        .global-header {
+            position: relative;
+            height: 220px;
+            background: linear-gradient(rgba(0,51,160,0.2), rgba(0,51,160,0.3)),
+                        url(images/backimg.jpg) center/cover no-repeat;
+            padding: 40px 50px;
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            z-index: 1000;
+            /* 新增定位上下文 */
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+
+        .logo-container {
+            width: 60px;
+            height: 60px;
+            padding: 8px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .logo-img {
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+        }
+
+        .institution-name {
+            font-size: 16px;
+            color: #0033A0;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        /* 调整标题区域高度 */
+        .global-header {
+            height: 300px;  /* 适当降低标题区高度 */
+            padding: 30px 40px;
+        }
+
+        /* 优化内容区域布局 */
+        .header-content {
+            margin-top: 10px;  /* 下移标题内容 */
+            max-width: 80%;
+            padding-right: 300px;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .logo-container {
+                right: 15px;
+                top: 15px;
+                gap: 10px;
+                padding: 6px 10px;
+            }
+            .logo {
+                height: 28px;
+            }
+            .header-content {
+                padding-right: 150px;
+            }
+        }
+        .main-title {
+            font: 600 36px/1.2 "Arial", sans-serif;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            color: rgba(255,255,255,0.95);
+        }
+
+        .main-title::before {
+            content: "";
+            display: inline-block;
+            width: 45px;
+            height: 3px;
+            background: #FFD700;
+            margin-right: 20px;
+        }
+
+        .subtitle {
+            font: 500 22px/1.4 "Arial", sans-serif;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 18px;
+        }
+
+        .description {
+            font: 16px/1.6 "Arial", sans-serif;
+            color: rgba(255,255,255,0.85);
+            max-width: 800px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .tabs-container {
+            margin: 30px auto;
+            width: 98%;
+        }
+
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            padding: 12px 25px;
+            background: #f0f2f5;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font: 500 16px/1.2 "Arial", sans-serif;
+            color: #0033A0;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button.active {
+            background: #0033A0;
+            color: white;
+            box-shadow: 0 3px 8px rgba(0,51,160,0.3);
+        }
+
+        .tab-content {
+            display: none;
+            position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            background: white;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+        /* ========== 主容器样式 ========== */
+        .scroll-container {
+            min-width: 100vw;
+            min-height: 100vh;
+            overflow: hidden;
+            background: #f0f2f5;
+            padding: 40px 20px;
+            padding-bottom: 60px;
+            transition: padding-top 0.3s ease;
+            flex: 1;
+            padding-top: 80px !important; /* 保证内容区撑满 */
+
+        }
+
+        /* ========== 地图卡片样式 ========== */
+        .map-card {
+            margin: 0;
+            width: 100%;
+        }
+
+        /* 新增响应式容器 */
+        .aspect-container {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 100px) !important;  /* 动态高度计算 */
+            min-height: 600px; /* 保证最小高度 */
+            max-height: none; /* 防止过高 */
+        }
+
+        .map-title {
+            position: absolute;
+            top: -25px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(255,255,255,0.9);
+            padding: 8px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            font: 600 18px/1.5 "微软雅黑", sans-serif;
+            color: #0033A0;
+            display: flex;
+            align-items: center;
+        }
+
+        .map-title::before {
+            content: "";
+            display: block;
+            width: 5px;
+            height: 18px;
+            background: #418FDE;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        /* ========== 地图容器样式 ========== */
+        #map1-container, 
+        #map2-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0; /* 四向定位撑满容器 */
+        }
+        
+        @media (min-width: 1600px) {
+            .aspect-container {
+                height: calc(100vh - 120px) !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .aspect-container {
+                height: calc(100vh - 140px) !important;
+                min-height: 450px;
+            }
+        }
+
+        /* 保持iframe全填充 */
+        .original-map {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .global-footer {
+        background: #f8f9fa;
+        padding: 40px 5%;
+    }
+
+    .footer-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    /* 修改联系人容器为横向排列 */
+    .contact-column {
+        display: flex;
+        gap: 30px; /* 设置间距 */
+        justify-content: space-between;
+        margin-bottom: 40px;
+    }
+
+    .lab-card {
+        flex: 1; /* 等宽分布 */
+        background: rgba(255,255,255,0.9);
+        border-radius: 8px;
+        padding: 25px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        min-width: 280px; /* 最小宽度 */
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+        .contact-column {
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .lab-card {
+            width: 100%;
+            min-width: auto;
+        }
+    }
+
+    .lab-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #0033A0;
+        margin-bottom: 15px;
+    }
+
+    .contact-info {
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 8px 0;
+    }
+
+    .social-icons {
+        margin-top: 15px;
+        display: flex;
+        gap: 15px;
+    }
+
+    .icon {
+        width: 30px;
+        height: 30px;
+        background: #ddd;
+        border-radius: 50%;
+    }
+
+    .links-column {
+        width: 45%;
+        padding-top: 80px; /* 链接下移对齐 */
+    }
+
+    .footer-link {
+        display: block;
+        color: #0033A0;
+        text-decoration: none;
+        margin: 15px 0;
+        font-weight: 500;
+    }
+
+    .disclaimer {
+        font-size: 12px;
+        color: #999;
+        text-align: center;
+        margin-top: 40px;
+        padding-top: 25px;
+        border-top: 1px solid #ddd;
+        width: 100%;
+    }
+        /* ========== 滚动隐藏效果 ========== */
+        .scroll-down .global-header {
+            transform: translateY(-100%);
+        }
+
+        /* ========== 基础样式 ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            overflow-y: scroll;
+            font-family: "Arial", sans-serif;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+       }
+    </style>
+</head>
+<body>
+    <header class="global-header">
+        <div class="header-content">
+            <h1 class="main-title">Sudan Crisis Monitor</h1>
+            <p class="description">Comprehensive visualization of population displacement and humanitarian needs across Sudan. Explore interactive maps and timeline data to understand the evolving situation.</p>
+        </div>
+    </header>
+
+    <div class="scroll-container">
+        <div class="tabs-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="switchTab('tab1')">Space-Time Displacement</button>
+                <button class="tab-button" onclick="switchTab('tab2')">Displacement Tracking Matrix</button>
+            </div>
+
+            <div id="tab1" class="tab-content active">
+                <div class="map-card">
+                    <!-- <div class="map-title">Space-Time Displacement Visualization</div> -->
+                    <div class="aspect-container">
+                        <div id="map1-container">
+                            <iframe class="original-map" src="Space-TimeDisplacementVisualization.html" ></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab2" class="tab-content">
+                <div class="map-card">
+                    <!-- <div class="map-title">Displacement Tracking Matrix Visualization</div> -->
+                    <div class="aspect-container">
+                        <div id="map2-container">
+                            <iframe class="original-map" src="DisplacementTrackingMatrixVisualization.html" ></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <footer class="global-footer">
+        <div class="footer-container">
+            <div class="contact-column">
+                <div class="lab-card">
+                    <div class="contact-info">
+                        <strong>SpaceTimeLab</strong>
+                        <br>
+                        Department of Civil, Environmental and Geomatic Engineering<br>
+                        University College London<br>
+                        Gower Street, London WC1E 6BT<br>
+                        United Kingdom<br>
+                        Contact: Prof Tao Cheng<br>
+                        Tel: +44 (0)20 7679 2738<br>
+                        Email: tao.cheng@ucl.ac.uk <br>
+                        <a href="https://www.ucl.ac.uk/civil-environmental-geomatic-engineering/research/groups-centres-and-sections/spacetimelab" 
+                        class="official-link" target="_blank">
+                        UCL SpaceTimeLab Official Website
+                        </a>
+                    </div>
+
+                </div>
+                <div class="lab-card">
+                    <div class="contact-info">
+                        <strong>Liesmars</strong>
+                        <br>
+                        Address: 129 Luoyu Road, Hongshan District<br>
+                        Wuhan University Information Campus<br>
+                        Tel: +86-27-68778229<br>
+                        Email: liesmars@whu.edu.cn <br>
+                        <a href="https://liesmars.whu.edu.cn/" 
+                        class="official-link" target="_blank">
+                        Liesmars Official Website
+                        </a>
+                    </div>
+                </div>
+                <div class="lab-card">
+                    <div class="contact-info">
+                        <strong>UN-IOM</strong>
+                        <br>
+                        Rte des Morillons 17,<br>
+                        1218 Le Grand-Saconnex,<br>
+                        Switzerland <br>
+                        Email: dtmsupport@iom.int <br>
+                        <a href="https://dtm.iom.int/" 
+                        class="official-link" target="_blank">
+                        UN-IOM Official Website
+                        </a>
+                    </div>
+                </div>
+            </div>
+    
+            <!-- 免责声明 -->
+            <div class="disclaimer">
+                Source: OpenStreetMap | Note: This map is for illustration purposes only. 
+                The boundaries and names shown do not imply official endorsement.
+            </div>
+        </div>
+    </footer>
+    <script>
+
+
+        function switchTab(tabId) {
+            // 隐藏所有内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // 移除所有按钮激活状态
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // 显示选中内容
+            document.getElementById(tabId).classList.add('active');
+            
+            // 激活对应按钮
+            event.currentTarget.classList.add('active');
+            
+            // 调整地图容器尺寸
+            setTimeout(adjustMapContainers, 100);
+        }
+
+
+        // 滚动隐藏逻辑
+        let lastScroll = 0;
+        const header = document.querySelector('.global-header');
+        
+        window.addEventListener('scroll', () => {
+            const currentScroll = window.pageYOffset;
+            
+            if (currentScroll > lastScroll && currentScroll > 100) {
+                document.body.classList.add('scroll-down');
+                document.querySelector('.scroll-container').style.paddingTop = '40px';
+            } else {
+                document.body.classList.remove('scroll-down');
+                document.querySelector('.scroll-container').style.paddingTop = '60px';
+            }
+            lastScroll = currentScroll;
+        });
+
+        // 地图标题位置调整
+        function adjustTitles() {
+            document.querySelectorAll('.map-card').forEach(card => {
+                const title = card.querySelector('.map-title');
+                const container = card.querySelector('div[id$="container"]');
+                if(title && container) {
+                    title.style.left = `${container.offsetLeft + 20}px`;
+                }
+            });
+        }
+
+        window.addEventListener('load', () => {
+            adjustTitles();
+            window.addEventListener('resize', adjustTitles);
+        });
+
+        function adjustMapContainers() {
+        const containers = document.querySelectorAll('.aspect-container');
+        
+        containers.forEach(container => {
+            // 根据窗口宽度计算比例
+            const windowWidth = window.innerWidth;
+            let aspectRatio = 0.75; // 默认4:3
+            
+            if (windowWidth >= 1200) {
+                aspectRatio = 9/16; // 16:9
+            } else if (windowWidth <= 768) {
+                aspectRatio = 1; // 1:1
+            }
+
+            // 动态设置容器高度
+            const containerWidth = container.offsetWidth;
+            container.style.paddingTop = `${containerWidth * aspectRatio}px`;
+            
+            // 同步iframe内容高度（需要同源）
+            const iframe = container.querySelector('iframe');
+            if (iframe && iframe.contentWindow) {
+                try {
+                    const contentHeight = iframe.contentDocument.documentElement.scrollHeight;
+                    iframe.style.height = `${contentHeight}px`;
+                } catch (e) {
+                    // 跨域安全限制处理
+                    console.log('安全限制阻止高度获取，使用CSS比例');
+                }
+            }
+        });
+    }
+
+    // 初始化及事件监听
+    window.addEventListener('load', adjustMapContainers);
+    window.addEventListener('resize', () => {
+        requestAnimationFrame(adjustMapContainers);
+    });
+
+    // 每30秒检查一次内容变化
+    setInterval(adjustMapContainers, 30000);
+
+
+    function calculateMapHeight() {
+        const header = document.querySelector('.global-header');
+        const footer = document.querySelector('.global-footer');
+        
+        // 精确计算元素总高度（包含margin）
+        const headerHeight = header.offsetHeight + 
+                            parseInt(getComputedStyle(header).marginTop) + 
+                            parseInt(getComputedStyle(header).marginBottom);
+        
+        const footerHeight = footer.offsetHeight + 
+                        parseInt(getComputedStyle(footer).marginTop) + 
+                        parseInt(getComputedStyle(footer).marginBottom);
+
+        return window.innerHeight - headerHeight - footerHeight + 70; // 补偿误差
+    }
+
+    function updateMapContainer() {
+        const baseHeight = calculateMapHeight();
+        const minVisible = 500; // 最小可视高度
+        
+        document.querySelectorAll('.aspect-container').forEach(container => {
+            container.style.height = `${Math.max(baseHeight, minVisible)}px`;
+            
+            // 强制iframe尺寸同步
+            const iframe = container.querySelector('iframe');
+            if(iframe) {
+                iframe.style.height = "100%";
+                iframe.style.width = "100%";
+            }
+        });
+    }
+
+    // 初始化调用
+    window.addEventListener('load', () => {
+        updateMapContainer();
+        setTimeout(adjustMapContainers, 500); // 等待iframe加载
+    });
+
+    // 窗口变化时更新
+    window.addEventListener('resize', () => {
+        requestAnimationFrame(() => {
+            updateMapContainer();
+            adjustMapContainers();
+        });
+    });
+
+    </script>
+</body>
+</html>
